@@ -67,7 +67,7 @@ FIREBASE_API_KEY = "AIzaSyARH5t0KeSfCAFXtJsVwZ4mQQPh1tiFQ10"
 PROJECT_ID = "nifty-brahmastra"  
 
 # =====================================================================
-# 🌐 GOOGLE OAUTH CONFIGURATION (Fixed without revoke_endpoint)
+# 🌐 GOOGLE OAUTH CONFIGURATION
 # =====================================================================
 GOOGLE_CLIENT_ID = "385248154956-7n88cq4vqoo4r1rjd2vqo23uku7lsg4c.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET = "GOCSPX-xWEIkC1ektG8XGitB7j82gMwhiC"
@@ -180,15 +180,15 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# HELPER: GOOGLE AUTH HANDLER (Fixed Static Key Bug)
+# HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
 # =====================================================================
-def handle_google_login():
+def handle_google_login(btn_key):
     result = oauth2.authorize_button(
         name="Continue with Google",
         icon="https://www.svgrepo.com/show/475656/google-color.svg",
         redirect_uri=REDIRECT_URI,
         scope="openid email profile",
-        key="google_auth_permanent_btn",  # Fixed Static Key
+        key=btn_key,
         use_container_width=True
     )
     
@@ -267,7 +267,7 @@ def login_signup_page():
                                 st.error("गलत ईमेल या पासवर्ड!")
 
                 st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or Login with</p>", unsafe_allow_html=True)
-                handle_google_login()
+                handle_google_login("google_login_unique_btn")
 
             # 2. SIGN UP TAB
             with signup_tab:
@@ -288,7 +288,7 @@ def login_signup_page():
                                 st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
 
                 st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or Sign Up with</p>", unsafe_allow_html=True)
-                handle_google_login()
+                handle_google_login("google_signup_unique_btn")
 
             # 3. FORGOT PASSWORD TAB
             with forgot_tab:
