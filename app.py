@@ -608,7 +608,6 @@ def main_trading_dashboard():
     if "live_history" not in st.session_state: st.session_state.live_history = None
 
     def dashboard():
-        def dashboard():
     # 📱 मोबाइल, टैबलेट और डेस्कटॉप के लिए टॉप हेडर (Index Select & Logout)
     head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
     
