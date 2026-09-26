@@ -29,6 +29,15 @@ except Exception as exc:
 # ---------------------------------------------------------------------
 st.set_page_config(page_title="NIFTY OI Brahmastra", page_icon="📊", layout="wide")
 
+hide_streamlit_style = """
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 APP_DIR = Path.home() / ".fyers_streamlit_nifty"
 APP_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = APP_DIR / "token.json"
