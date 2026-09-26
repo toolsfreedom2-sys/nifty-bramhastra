@@ -36,6 +36,9 @@ header {visibility: hidden;}
 footer {visibility: hidden;}
 .stAppDeployButton {display: none !important;}
 div[data-testid="stStatusWidget"] {display: none !important;}
+[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+.viewerBadge_container {display: none !important;}
+[data-testid="stDecoration"] {display: none !important;}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
