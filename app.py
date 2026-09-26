@@ -67,7 +67,7 @@ FIREBASE_API_KEY = "AIzaSyARH5t0KeSfCAFXtJsVwZ4mQQPh1tiFQ10"
 PROJECT_ID = "nifty-brahmastra"  
 
 # =====================================================================
-# 🌐 GOOGLE OAUTH CONFIGURATION (Google Cloud Credentials)
+# 🌐 GOOGLE OAUTH CONFIGURATION (Fixed without revoke_endpoint)
 # =====================================================================
 GOOGLE_CLIENT_ID = "385248154956-7n88cq4vqoo4r1rjd2vqo23uku7lsg4c.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET = "GOCSPX-xWEIkC1ektG8XGitB7j82gMwhiC"
@@ -180,7 +180,7 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# HELPER: GOOGLE AUTH HANDLER
+# HELPER: GOOGLE AUTH HANDLER (Fixed Static Key Bug)
 # =====================================================================
 def handle_google_login():
     result = oauth2.authorize_button(
@@ -188,23 +188,23 @@ def handle_google_login():
         icon="https://www.svgrepo.com/show/475656/google-color.svg",
         redirect_uri=REDIRECT_URI,
         scope="openid email profile",
-        key=f"google_auth_{time.time()}",
+        key="google_auth_permanent_btn",  # Fixed Static Key
         use_container_width=True
     )
+    
     if result:
         try:
-            access_token = result.get("token", {}).get("access_token")
-            if access_token:
+            token = result.get("token")
+            if token:
+                access_token = token.get("access_token")
                 res = requests.get(f"https://www.googleapis.com/oauth2/v1/userinfo?access_token={access_token}")
                 user_info = res.json()
                 user_email = user_info.get("email")
+                
                 if user_email:
-                    # यदि यूजर नया है तो डेटाबेस में एंट्री करें
-                    sub_status = check_subscription_from_db(user_email)
-                    if user_email == ADMIN_EMAIL:
-                        sub_status = True
-                    else:
-                        # अगर पहली बार गूगल से आया है और रिकॉर्ड नहीं है तो जोड़े
+                    sub_status = check_subscription_from_db(user_email) or (user_email == ADMIN_EMAIL)
+                    
+                    if user_email != ADMIN_EMAIL:
                         doc_id = format_email_for_db(user_email)
                         check_url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/users/{doc_id}?key={FIREBASE_API_KEY}"
                         chk_r = requests.get(check_url)
@@ -214,11 +214,11 @@ def handle_google_login():
                     st.session_state.logged_in = True
                     st.session_state.user_email = user_email
                     st.session_state.has_subscription = sub_status
-                    st.success(f"लॉगिन सफल: {user_email}")
+                    st.success(f"✅ लॉगिन सफल: {user_email}")
                     time.sleep(0.5)
                     st.rerun()
         except Exception as e:
-            st.error(f"गूगल ऑथेंटिकेशन त्रुटि: {e}")
+            st.error(f"❌ गूगल ऑथेंटिकेशन एरर: {e}")
 
 # =====================================================================
 # PAGE 1: STYLISH LOGIN & SIGNUP PAGE
@@ -781,13 +781,8 @@ def main_trading_dashboard():
 # SECURE PRODUCTION ROUTER LOGIC
 # =====================================================================
 if not st.session_state.get("logged_in", False):
-    # 1. अगर यूजर लॉग इन नहीं है, तो लॉगिन/साइन-अप पेज दिखाएं
     login_signup_page()
-
 elif st.session_state.get("user_email") == ADMIN_EMAIL or st.session_state.get("has_subscription", False):
-    # 2. अगर यूजर 'एडमिन' है या उसके पास 'एक्टिव सब्सक्रिप्शन' है, तभी डैशबोर्ड खुलेगा
     main_trading_dashboard()
-
 else:
-    # 3. अगर यूजर लॉग इन है लेकिन सब्सक्रिप्शन नहीं है, तो उसे सिर्फ प्राइसिंग पेज दिखेगा
     pricing_page()
