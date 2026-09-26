@@ -603,11 +603,14 @@ def main_trading_dashboard():
                 
             st.dataframe(ch_display.style.apply(style_mini_chain, axis=1), use_container_width=True, height=min(360, 45 + len(ch_display) * 35))
 
-    if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
+# =====================================================================
+# MAIN TRADING DASHBOARD (मोबाइल, टैबलेट और डेस्कटॉप के लिए टॉप हेडर)
+# =====================================================================
+if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
 if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
-def dashboard():
+def main_trading_dashboard():
     # 📱 मोबाइल, टैबलेट और डेस्कटॉप के लिए टॉप हेडर (Index Select & Logout)
     head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
     
@@ -641,6 +644,8 @@ def dashboard():
                 st.session_state.last_fetch = now
                 add_snapshot(rows)
         except Exception as e: pass
+
+    # इसके बाद आपका नीचे का बाकी का डैशबोर्ड वाला सारा कोड वैसे ही रहेगा...
         now = time.time()
         if now - st.session_state.last_fetch >= 0.9:
             try:
