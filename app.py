@@ -645,19 +645,6 @@ def main_trading_dashboard():
                 add_snapshot(rows)
         except Exception as e: pass
 
-    # इसके बाद आपका नीचे का बाकी का डैशबोर्ड वाला सारा कोड वैसे ही रहेगा...
-        now = time.time()
-        if now - st.session_state.last_fetch >= 0.9:
-            try:
-                resp = option_chain(api, symbol, strike_count)
-                spot, rows, meta, err = parse_chain(resp)
-                if not err:
-                    st.session_state.live_chain = (spot, rows, meta)
-                    st.session_state.live_history = history(api, symbol)
-                    st.session_state.last_fetch = now
-                    add_snapshot(rows)
-            except Exception as e: pass
-
         st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE")
         if not st.session_state.live_chain: st.info("डेटा लोड हो रहा है, कृपया प्रतीक्षा करें..."); return
         spot, rows, meta = st.session_state.live_chain
