@@ -54,7 +54,8 @@ STATE = "nifty_oi_brahmastra"
 # =====================================================================
 # 👑 ADMIN SAAS CONFIGURATION
 # =====================================================================
-ADMIN_EMAIL = "markam296@gmail.com"  
+# `.strip().lower()` सुनिश्चित करता है कि स्पेस या कैपिटल लेटर से कोई दिक्कत न हो
+ADMIN_EMAIL = "markam296@gmail.com".strip().lower()  
 FYERS_APP_ID = "IDCN3BSFJ3-100" 
 FYERS_SECRET_KEY = "QSTYMRQY83" 
 if fyersModel is None:
@@ -106,7 +107,7 @@ def send_password_reset_email(email):
     r = requests.post(url, json=payload)
     return r.json()
 
-# 2. Firestore Database Functions (WITH EXPIRY LOGIC)
+# 2. Firestore Database Functions
 def format_email_for_db(email):
     return email.replace('@', '_at_').replace('.', '_dot_')
 
@@ -180,7 +181,7 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
+# HELPER: GOOGLE AUTH HANDLER
 # =====================================================================
 def handle_google_login(btn_key):
     try:
@@ -203,6 +204,8 @@ def handle_google_login(btn_key):
                     user_email = user_info.get("email")
                     
                     if user_email:
+                        # Normalize email
+                        user_email = str(user_email).strip().lower()
                         sub_status = check_subscription_from_db(user_email) or (user_email == ADMIN_EMAIL)
                         
                         if user_email != ADMIN_EMAIL:
@@ -255,11 +258,12 @@ def login_signup_page():
                         st.warning("कृपया ईमेल और पासवर्ड दोनों दर्ज करें।")
                     else:
                         with st.spinner("लॉग इन हो रहा है..."):
-                            user = sign_in_with_email_and_password(login_email, login_pass)
+                            login_email_clean = login_email.strip().lower()
+                            user = sign_in_with_email_and_password(login_email_clean, login_pass)
                             if "idToken" in user:
-                                sub_status = check_subscription_from_db(login_email) or (login_email == ADMIN_EMAIL)
+                                sub_status = check_subscription_from_db(login_email_clean) or (login_email_clean == ADMIN_EMAIL)
                                 st.session_state.logged_in = True
-                                st.session_state.user_email = login_email
+                                st.session_state.user_email = login_email_clean
                                 st.session_state.has_subscription = sub_status
                                 st.success("लॉगिन सफल!")
                                 time.sleep(0.5)
@@ -281,9 +285,10 @@ def login_signup_page():
                         st.warning("ईमेल सही डालें और पासवर्ड कम से कम 6 अक्षरों का रखें।")
                     else:
                         with st.spinner("अकाउंट बनाया जा रहा है..."):
-                            user = sign_up_with_email_and_password(new_email, new_pass)
+                            new_email_clean = new_email.strip().lower()
+                            user = sign_up_with_email_and_password(new_email_clean, new_pass)
                             if "idToken" in user:
-                                update_subscription_in_db(new_email, "None", 0)
+                                update_subscription_in_db(new_email_clean, "None", 0)
                                 st.success("अकाउंट सफलतापूर्वक बन गया! अब 'Login' टैब से लॉग इन करें।")
                             else:
                                 st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
@@ -302,7 +307,8 @@ def login_signup_page():
                         st.warning("कृपया अपना ईमेल दर्ज करें।")
                     else:
                         with st.spinner("लिंक भेजा जा रहा है..."):
-                            res = send_password_reset_email(reset_email)
+                            reset_email_clean = reset_email.strip().lower()
+                            res = send_password_reset_email(reset_email_clean)
                             if "email" in res:
                                 st.success("पासवर्ड रीसेट लिंक आपके ईमेल पर भेज दिया गया है!")
                             else:
@@ -413,7 +419,8 @@ def main_trading_dashboard():
         strike_count = st.slider("ATM ± Strikes", 5, 25, 10)
         st.divider()
         
-        if st.session_state.get("user_email") == ADMIN_EMAIL:
+        # Admin Panel Check - Normalized
+        if str(st.session_state.get("user_email", "")).strip().lower() == ADMIN_EMAIL:
             st.header("👑 Admin Panel (FYERS API)")
             auth_code = st.query_params.get("auth_code") or st.query_params.get("code")
             if auth_code:
@@ -735,7 +742,7 @@ def main_trading_dashboard():
             alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>⚠️ S/R SELL ALERT: Resistance ({resistance:.0f}) के पास! Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</div>"
     if alert_html: st.markdown(alert_html, unsafe_allow_html=True)
 
-    # SWING HIGH / LOW FAST SCALP ALERT (NEW FEATURE)
+    # SWING HIGH / LOW FAST SCALP ALERT
     swing_low, swing_high = get_swing_levels(st.session_state.live_history)
     swing_alert_html = ""
     if spot and swing_low and swing_high:
@@ -745,7 +752,7 @@ def main_trading_dashboard():
             swing_alert_html = f"<div class='blinking-alert' style='background-color:#fef3c7; color:#92400e; border-color:#f59e0b;'>⚡ SWING SELL ALERT (Fast Scalp): Local Swing High ({swing_high:.0f}) के पास! Entry: {swing_high:.0f} | Target: {swing_high-50:.0f} | SL: {swing_high+15:.0f}</div>"
     if swing_alert_html: st.markdown(swing_alert_html, unsafe_allow_html=True)
 
-    # METRICS ROW (Includes India VIX & Change %)
+    # METRICS ROW (Includes India VIX)
     a, b, c, d, e, f = st.columns(6)
     a.metric("NIFTY Spot", fmt_price(spot))
     b.metric("CALL OI", fmt_num(meta["call_oi"]))
@@ -800,11 +807,20 @@ def main_trading_dashboard():
     st.dataframe(out_df.style.apply(style_chain, axis=1), use_container_width=True, hide_index=True)
 
 # =====================================================================
-# SECURE PRODUCTION ROUTER LOGIC
+# SECURE PRODUCTION ROUTER LOGIC & FYERS REDIRECT CATCH
 # =====================================================================
+# Catch Fyers Return URL (Prevents getting locked out due to Streamlit session drop)
+if ("auth_code" in st.query_params or "code" in st.query_params) and st.query_params.get("state") == STATE:
+    st.session_state.logged_in = True
+    st.session_state.user_email = ADMIN_EMAIL
+    st.session_state.has_subscription = True
+
+# Normalize email check
+current_email = str(st.session_state.get("user_email", "")).strip().lower()
+
 if not st.session_state.get("logged_in", False):
     login_signup_page()
-elif st.session_state.get("user_email") == ADMIN_EMAIL or st.session_state.get("has_subscription", False):
+elif current_email == ADMIN_EMAIL or st.session_state.get("has_subscription", False):
     main_trading_dashboard()
 else:
     pricing_page()
