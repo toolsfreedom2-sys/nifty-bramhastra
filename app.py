@@ -604,10 +604,10 @@ def main_trading_dashboard():
             st.dataframe(ch_display.style.apply(style_mini_chain, axis=1), use_container_width=True, height=min(360, 45 + len(ch_display) * 35))
 
     if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
-    if "live_chain" not in st.session_state: st.session_state.live_chain = None
-    if "live_history" not in st.session_state: st.session_state.live_history = None
+if "live_chain" not in st.session_state: st.session_state.live_chain = None
+if "live_history" not in st.session_state: st.session_state.live_history = None
 
-    def dashboard():
+def dashboard():
     # 📱 मोबाइल, टैबलेट और डेस्कटॉप के लिए टॉप हेडर (Index Select & Logout)
     head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
     
