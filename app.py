@@ -521,7 +521,7 @@ def login_signup_page():
         border-radius:28px 0 0 28px !important;
         overflow:hidden !important;
         background:#eef8ff !important;
-        min-height:1024px !important;
+        min-height:0 !important;
     }
     div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor) > div[data-testid="column"]:last-child {
         border:1px solid #cfe7ff !important;
@@ -529,7 +529,7 @@ def login_signup_page():
         border-radius:0 28px 28px 0 !important;
         overflow:hidden !important;
         background:#ffffff !important;
-        min-height:1024px !important;
+        min-height:0 !important;
         box-sizing:border-box !important;
     }
 
@@ -539,7 +539,7 @@ def login_signup_page():
     .auth-left-image {
         width:100% !important;
         height:auto !important;
-        min-height:1024px !important;
+        min-height:0 !important;
         object-fit:cover !important;
         object-position:center top !important;
         display:block !important;
@@ -755,6 +755,191 @@ def login_signup_page():
     /* Keep the right panel visually balanced with the illustration side. */
     .auth-tabs {
         box-shadow: 0 4px 14px rgba(37,116,203,.06);
+    }
+
+
+    /* ============================================================
+       FINAL: ONE SHARED CARD, PERFECTLY EQUAL LEFT/RIGHT HALVES
+       The red-box area in the supplied reference is one card.
+       Both Streamlit columns are forced to the same 3:4 panel ratio.
+       ============================================================ */
+
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor) {
+        width: min(100%, 1460px) !important;
+        margin: 0 auto !important;
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: stretch !important;
+        gap: 0 !important;
+        border: 1px solid #c8e3fb !important;
+        border-radius: 28px !important;
+        overflow: hidden !important;
+        background:
+            linear-gradient(135deg, #e9f7ff 0%, #f9fdff 50%, #eaf7ff 100%) !important;
+        box-shadow: 0 18px 55px rgba(25,118,210,.14) !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor)
+      > div[data-testid="column"] {
+        flex: 0 0 50% !important;
+        width: 50% !important;
+        max-width: 50% !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+        align-self: stretch !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor)
+      > div[data-testid="column"]:first-child {
+        background:
+            linear-gradient(180deg, rgba(235,249,255,.95), rgba(246,252,255,.98)) !important;
+        border: 0 !important;
+        border-right: 1px solid #d8eafb !important;
+        border-radius: 0 !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor)
+      > div[data-testid="column"]:last-child {
+        background:
+            radial-gradient(circle at 96% 6%, rgba(209,237,255,.55), transparent 25%),
+            linear-gradient(180deg, #f4fbff 0%, #ffffff 45%, #f5fbff 100%) !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+    }
+
+    /* Left reference image controls the card height naturally. */
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor)
+      > div[data-testid="column"]:first-child img {
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: 3 / 4 !important;
+        object-fit: cover !important;
+        object-position: center top !important;
+        display: block !important;
+        margin: 0 !important;
+    }
+
+    /* The right side gets exactly the same visual height as the image. */
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor)
+      > div[data-testid="column"]:last-child {
+        position: relative !important;
+        aspect-ratio: 3 / 4 !important;
+        min-height: 0 !important;
+    }
+
+    .auth-right-content {
+        height: 100% !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        padding: 34px 42px 26px 42px !important;
+        box-sizing: border-box !important;
+        background: rgba(255,255,255,.72) !important;
+    }
+
+    .auth-tabs {
+        height: 76px !important;
+        margin-bottom: 32px !important;
+    }
+
+    .auth-title {
+        font-size: clamp(30px, 3vw, 44px) !important;
+    }
+
+    .auth-subtitle {
+        font-size: clamp(15px, 1.5vw, 21px) !important;
+        margin-bottom: 24px !important;
+    }
+
+    .auth-input-wrap {
+        margin-bottom: 15px !important;
+    }
+
+    .auth-input-wrap div[data-testid="stTextInput"] input {
+        height: 62px !important;
+        border-radius: 14px !important;
+        font-size: 16px !important;
+    }
+
+    .auth-primary button {
+        min-height: 62px !important;
+        border-radius: 14px !important;
+        font-size: 19px !important;
+    }
+
+    .auth-divider {
+        margin: 20px 0 16px 0 !important;
+    }
+
+    .auth-google button {
+        min-height: 58px !important;
+        border-radius: 14px !important;
+    }
+
+    .auth-bottom {
+        margin-top: 20px !important;
+    }
+
+    /* Prevent nested Streamlit rows inside the right half from adding
+       unexpected vertical gaps. */
+    .auth-right-content > div[data-testid="stHorizontalBlock"] {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        gap: 0 !important;
+    }
+
+    @media (max-width: 900px) {
+        .block-container {
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+        }
+        .auth-right-content {
+            padding: 24px 22px 20px 22px !important;
+        }
+        .auth-tabs {
+            height: 60px !important;
+            margin-bottom: 24px !important;
+        }
+        .auth-tab {
+            font-size: 16px !important;
+        }
+        .auth-input-wrap div[data-testid="stTextInput"] input {
+            height: 52px !important;
+            font-size: 14px !important;
+        }
+        .auth-primary button {
+            min-height: 52px !important;
+            font-size: 16px !important;
+        }
+        .auth-google button {
+            min-height: 48px !important;
+            font-size: 14px !important;
+        }
+    }
+
+
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor) {
+        height: min(973px, 66.6667vw) !important;
+        min-height: 0 !important;
+        max-height: 973px !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor)
+      > div[data-testid="column"] {
+        height: 100% !important;
+        min-height: 0 !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.auth-left-anchor)
+      > div[data-testid="column"]:first-child img {
+        height: 100% !important;
+        aspect-ratio: auto !important;
+        object-fit: cover !important;
     }
 
 </style>
