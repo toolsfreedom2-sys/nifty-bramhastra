@@ -51,7 +51,7 @@ REDIRECT_URI = "https://nifty-bramhastra.streamlit.app/"
 STATE = "nifty_oi_brahmastra"
 
 # =====================================================================
-# 👑 ADMIN SAAS CONFIGURATION (यहाँ अपनी डिटेल्स भरें)
+# 👑 ADMIN SAAS CONFIGURATION
 # =====================================================================
 ADMIN_EMAIL = "markam296@gmail.com"  
 FYERS_APP_ID = "IDCN3BSFJ3-100" 
@@ -92,7 +92,6 @@ def format_email_for_db(email):
 
 def update_subscription_in_db(email, plan_name, days_valid):
     doc_id = format_email_for_db(email)
-    
     if days_valid == 0:
         has_sub = False
         expiry_date_str = ""
@@ -116,13 +115,11 @@ def check_subscription_from_db(email):
     doc_id = format_email_for_db(email)
     url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/users/{doc_id}?key={FIREBASE_API_KEY}"
     r = requests.get(url)
-    
     if r.status_code == 200:
         data = r.json()
         fields = data.get("fields", {})
         has_sub = fields.get("has_subscription", {}).get("booleanValue", False)
         expiry_str = fields.get("expiry_date", {}).get("stringValue", "")
-        
         if has_sub and expiry_str:
             try:
                 expiry_date = datetime.fromisoformat(expiry_str)
@@ -135,10 +132,9 @@ def check_subscription_from_db(email):
     return False
 
 # ---------------------------------------------------------------------
-# CSS
+# CSS STYLING
 # ---------------------------------------------------------------------
-st.markdown(
-    """
+st.markdown("""
 <style>
 .block-container {padding-top:.7rem;padding-bottom:1rem}
 .trend { border-radius:14px; padding:14px; text-align:center; font-size:25px; font-weight:800; margin-bottom:12px; }
@@ -153,14 +149,14 @@ st.markdown(
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
-# SESSION STATE SETUP (For Login)
+# SESSION STATE SETUP
 # ---------------------------------------------------------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "user_email" not in st.session_state:
-    st.session_state.user_email = ""
-if "has_subscription" not in st.session_state:
-    st.session_state.has_subscription = False
+if "logged_in" not in st.session_state: st.session_state.logged_in = False
+if "user_email" not in st.session_state: st.session_state.user_email = ""
+if "has_subscription" not in st.session_state: st.session_state.has_subscription = False
+if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
+if "live_chain" not in st.session_state: st.session_state.live_chain = None
+if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
 # PAGE 1: LOGIN & SIGNUP
@@ -170,12 +166,10 @@ def login_signup_page():
     st.write("सॉफ्टवेयर इस्तेमाल करने के लिए लॉग इन या साइन अप करें।")
     
     tab1, tab2 = st.tabs(["Log In", "Sign Up (नया अकाउंट)"])
-    
     with tab1:
         st.subheader("लॉग इन करें")
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_pass")
-        
         if st.button("Log In", use_container_width=True):
             if not email or not password:
                 st.warning("ईमेल और पासवर्ड दोनों डालें।")
@@ -186,7 +180,6 @@ def login_signup_page():
                         sub_status = check_subscription_from_db(email)
                         if email == ADMIN_EMAIL:
                             sub_status = True
-                        
                         st.session_state.logged_in = True
                         st.session_state.user_email = email
                         st.session_state.has_subscription = sub_status
@@ -198,7 +191,6 @@ def login_signup_page():
         st.subheader("नया अकाउंट बनाएं")
         new_email = st.text_input("New Email", key="signup_email")
         new_password = st.text_input("New Password (कम से कम 6 अक्षर)", type="password", key="signup_pass")
-        
         if st.button("Sign Up", use_container_width=True):
             if not new_email or len(new_password) < 6:
                 st.warning("ईमेल सही डालें और पासवर्ड कम से कम 6 अक्षरों का रखें।")
@@ -212,7 +204,7 @@ def login_signup_page():
                         st.error("यह ईमेल पहले से रजिस्टर्ड है या कोई एरर है!")
 
 # =====================================================================
-# PAGE 2: PRICING (PAYMENT GATEWAY)
+# PAGE 2: PRICING / SUBSCRIPTION
 # =====================================================================
 def pricing_page():
     st.title("💎 सब्सक्रिप्शन प्लान चुनें")
@@ -224,9 +216,7 @@ def pricing_page():
         st.markdown("### 🥉 Monthly Plan")
         st.markdown("<h2>₹499 / month</h2>", unsafe_allow_html=True)
         st.write("✔️ Live Option Chain\n✔️ Advanced Proximity Alerts\n✔️ 15/30/60m OI Shift Data\n✔️ Delta & Theta Analysis")
-        
         st.link_button("👉 Pay ₹499 (Monthly)", "https://rzp.io/rzp/DOV54Zg", use_container_width=True)
-        
         st.caption("पेमेंट करने के बाद नीचे Verify बटन दबाएं:")
         if st.button("✅ मैंने पेमेंट कर दिया है (Verify)", use_container_width=True, key="verify_monthly"):
             with st.spinner("डेटाबेस अपडेट हो रहा है..."):
@@ -253,7 +243,6 @@ def pricing_page():
 # PAGE 3: MAIN TRADING DASHBOARD
 # =====================================================================
 def main_trading_dashboard():
-    # -- HELPERS --
     def sf(v, default=0.0):
         try: return float(v)
         except: return default
@@ -283,7 +272,7 @@ def main_trading_dashboard():
             a = abs(v)
             if a >= 10_000_000: return f"{sign}{a / 10_000_000:.2f} Cr"
             if a >= 100_000: return f"{sign}{a / 100_000:.2f} L"
-            if a >= 1_000: return f"{sign}{a / 1_000:.2f} K"
+            if a >= 1_000: return f"{sign}{a / 1_000:.1f} K"
             return f"{v:,.0f}"
         except: return "-"
 
@@ -320,24 +309,15 @@ def main_trading_dashboard():
     def save_token(client_id, token):
         TOKEN_FILE.write_text(json.dumps({"client_id": client_id, "access_token": token, "saved_at": datetime.now().isoformat()}, ensure_ascii=False), encoding="utf-8")
 
-    # =====================================================================
-    # SIDEBAR: SETTINGS (For Everyone) & FYERS ADMIN (For Admin Only)
-    # =====================================================================
-    if "access_token" not in st.session_state:
-        st.session_state.access_token = ""
-
+    # SIDEBAR
     with st.sidebar:
         st.header("⚙️ Dashboard Settings")
         show_bar_oichange = st.checkbox("📌 OI Bar के साथ OI Change दिखाएँ", value=True)
         strike_count = st.slider("ATM ± Strikes", 5, 25, 10)
-        
         st.divider()
         
-        # 👑 सिर्फ एडमिन को दिखेगा (Fyers API Login Panel)
         if st.session_state.get("user_email") == ADMIN_EMAIL:
             st.header("👑 Admin Panel (FYERS API)")
-            
-            # Catch Auth Code from URL
             auth_code = st.query_params.get("auth_code") or st.query_params.get("code")
             if auth_code:
                 token, err = exchange_auth_code(FYERS_APP_ID, FYERS_SECRET_KEY, auth_code)
@@ -364,14 +344,11 @@ def main_trading_dashboard():
 
         st.divider()
         expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
-        
-    # =====================================================================
-    # MAIN LOGIC - FETCH DATA FOR EVERYONE USING ADMIN'S TOKEN
-    # =====================================================================
+
     access_token = saved_token(FYERS_APP_ID)
     if not access_token:
         st.title("📊 NIFTY OI BRAHMĀSTRA")
-        st.warning("⚠️ लाइव मार्केट डेटा अभी कनेक्ट नहीं हुआ है। कृपया कुछ समय बाद दोबारा प्रयास करें या एडमिन से संपर्क करें।")
+        st.warning("⚠️ लाइव मार्केट डेटा अभी कनेक्ट नहीं हुआ है। कृपया एडमिन पैनल से Fyers लॉगिन करें।")
         return
 
     @st.cache_resource(show_spinner=False)
@@ -507,7 +484,6 @@ def main_trading_dashboard():
         elif score <= -0.18: return res or spot, sup or spot, "BEARISH SETUP"
         return sup or spot, res or spot, "RANGE / SIDEWAYS"
 
-    # -- NATIVE STREAMLIT CHARTS --
     def candle_chart(history_response, spot):
         if not isinstance(history_response, dict) or str(history_response.get("s", "")).lower() != "ok": return
         candles = history_response.get("candles", [])
@@ -602,26 +578,19 @@ def main_trading_dashboard():
                 
             st.dataframe(ch_display.style.apply(style_mini_chain, axis=1), use_container_width=True, height=min(360, 45 + len(ch_display) * 35))
 
-    # 📱 मोबाइल, टैबलेट और डेस्कटॉप के लिए टॉप हेडर (Index Select & Logout)
+    # TOP HEADER (Mobile, Tablet & Desktop Friendly)
     head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
-    
     with head_col1:
-        global index_name, symbol
         index_name = st.selectbox("📊 Index Select", list(INDEX_MAP.keys()), key="main_index_select")
         symbol = INDEX_MAP[index_name]
-        
     with head_col2:
-        global strike_count
         strike_count = st.slider("ATM ± Strikes", 5, 25, 10, key="main_strike_slider")
-        
     with head_col3:
-        st.write("") 
-        st.write("")
+        st.write(""); st.write("")
         if st.button("🚪 Logout", use_container_width=True, key="dash_logout_main"):
             st.session_state.logged_in = False
             st.session_state.has_subscription = False
             st.rerun()
-            
     st.divider()
 
     now = time.time()
@@ -636,12 +605,12 @@ def main_trading_dashboard():
                 add_snapshot(rows)
             else:
                 if st.session_state.live_chain is None:
-                    st.info("ℹ️ आज मार्केट बंद है। कृपया सोमवार को बाजार खुलने पर लाइव डेटा देखें या Fyers API कनेक्ट करें।")
+                    st.info("ℹ️ आज मार्केट बंद है या डेटा उपलब्ध नहीं है।")
         except Exception as e:
             pass
 
     st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE")
-    if not st.session_state.live_chain: 
+    if not st.session_state.live_chain:
         st.info("डेटा लोड हो रहा है, कृपया प्रतीक्षा करें...")
         return
         
@@ -711,12 +680,6 @@ def main_trading_dashboard():
             elif 'PUT' in col and strike >= atm_strike: styles[i] = 'background-color: rgba(239, 68, 68, 0.15)'
         return styles
     st.dataframe(out_df.style.apply(style_chain, axis=1), use_container_width=True, hide_index=True)
-
-    if hasattr(st, "fragment"):
-        @st.fragment(run_every="1s")
-        def live_fragment(): 
-            pass  # Fragment container block
-        live_fragment()
 
 # =====================================================================
 # ROUTER LOGIC
