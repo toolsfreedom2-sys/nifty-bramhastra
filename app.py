@@ -217,7 +217,7 @@ def google_login_button():
     components.html(google_auth_html, height=60)
 
 # =====================================================================
-# PAGE 1: STYLISH LOGIN & SIGNUP PAGE
+# PAGE 1: STYLISH LOGIN & SIGNUP PAGE (Google & Custom Email for Both)
 # =====================================================================
 def login_signup_page():
     col_left, col_right = st.columns([1.1, 1.3], gap="large")
@@ -225,7 +225,7 @@ def login_signup_page():
     with col_left:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("<h1 class='brand-title'>Welcome Back!</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='color: #64748b; font-size: 16px;'>अपने अकाउंट में लॉगिन करें और NIFTY OI Brahmāstra का आनंद लें।</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #64748b; font-size: 16px;'>अपने अकाउंट में लॉगिन करें या साइन अप करें और NIFTY OI Brahmāstra का आनंद लें।</p>", unsafe_allow_html=True)
         
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -262,16 +262,16 @@ def login_signup_page():
                             else:
                                 st.error("गलत ईमेल या पासवर्ड!")
 
-                st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or continue with</p>", unsafe_allow_html=True)
+                st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or Login with</p>", unsafe_allow_html=True)
                 google_login_button()
 
-            # 2. SIGN UP TAB
+            # 2. SIGN UP TAB (कस्टम ईमेल + गूगल दोनों की सुविधा)
             with signup_tab:
                 st.subheader("Create a new account")
                 new_email = st.text_input("Email Address", key="s_email", placeholder="name@example.com")
                 new_pass = st.text_input("Password (min 6 chars)", type="password", key="s_pass", placeholder="••••••••")
                 
-                if st.button("Sign Up", use_container_width=True):
+                if st.button("Sign Up with Email", use_container_width=True):
                     if not new_email or len(new_pass) < 6:
                         st.warning("ईमेल सही डालें और पासवर्ड कम से कम 6 अक्षरों का रखें।")
                     else:
@@ -282,6 +282,9 @@ def login_signup_page():
                                 st.success("अकाउंट सफलतापूर्वक बन गया! अब 'Login' टैब से लॉग इन करें।")
                             else:
                                 st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
+
+                st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or Sign Up with</p>", unsafe_allow_html=True)
+                google_login_button()
 
             # 3. FORGOT PASSWORD TAB
             with forgot_tab:
