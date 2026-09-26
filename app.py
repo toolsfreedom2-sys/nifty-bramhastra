@@ -608,6 +608,41 @@ def main_trading_dashboard():
     if "live_history" not in st.session_state: st.session_state.live_history = None
 
     def dashboard():
+        def dashboard():
+    # 📱 मोबाइल, टैबलेट और डेस्कटॉप के लिए टॉप हेडर (Index Select & Logout)
+    head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
+    
+    with head_col1:
+        global index_name, symbol
+        index_name = st.selectbox("📊 Index Select", list(INDEX_MAP.keys()), key="main_index_select")
+        symbol = INDEX_MAP[index_name]
+        
+    with head_col2:
+        global strike_count
+        strike_count = st.slider("ATM ± Strikes", 5, 25, 10, key="main_strike_slider")
+        
+    with head_col3:
+        st.write("") 
+        st.write("")
+        if st.button("🚪 Logout", use_container_width=True, key="dash_logout_main"):
+            st.session_state.logged_in = False
+            st.session_state.has_subscription = False
+            st.rerun()
+            
+    st.divider()
+
+    # इसके बाद आपका नीचे का पुराना डेटा फ़ेच करने वाला कोड वैसे ही रहेगा:
+    now = time.time()
+    if now - st.session_state.last_fetch >= 0.9:
+        try:
+            resp = option_chain(api, symbol, strike_count)
+            spot, rows, meta, err = parse_chain(resp)
+            if not err:
+                st.session_state.live_chain = (spot, rows, meta)
+                st.session_state.live_history = history(api, symbol)
+                st.session_state.last_fetch = now
+                add_snapshot(rows)
+        except Exception as e: pass
         now = time.time()
         if now - st.session_state.last_fetch >= 0.9:
             try:
