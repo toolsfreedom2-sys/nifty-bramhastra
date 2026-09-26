@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
+NIFTY OI BRAHMĀSTRA (ULTRA MODERN SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
 """
 
@@ -31,16 +31,154 @@ except Exception as exc:
 # ---------------------------------------------------------------------
 st.set_page_config(page_title="NIFTY OI Brahmastra", page_icon="📊", layout="wide")
 
+# ---------------------------------------------------------------------
+# CSS STYLING (ULTRA MODERN UI)
+# ---------------------------------------------------------------------
 hide_streamlit_style = """
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Poppins', sans-serif;
+}
+
 #MainMenu {visibility: hidden;}
 header {visibility: hidden;}
 footer {visibility: hidden;}
 .stAppDeployButton {display: none !important;}
 div[data-testid="stStatusWidget"] {display: none !important;}
 [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-.viewerBadge_container {display: none !important;}
-[data-testid="stDecoration"] {display: none !important;}
+
+/* 🌟 ULTRA MODERN LOGIN UI CSS 🌟 */
+.hero-box {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+    color: white;
+    padding: 45px 40px;
+    border-radius: 24px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+.hero-title {
+    font-size: 42px;
+    font-weight: 800;
+    background: linear-gradient(to right, #60a5fa, #ffffff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 15px;
+    line-height: 1.2;
+}
+.hero-subtitle {
+    color: #94a3b8;
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 35px;
+}
+.feature-item {
+    background: rgba(255, 255, 255, 0.06);
+    padding: 18px 20px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 16px;
+    backdrop-filter: blur(12px);
+    transition: transform 0.3s ease, background 0.3s ease;
+}
+.feature-item:hover {
+    transform: translateY(-5px);
+    background: rgba(255, 255, 255, 0.12);
+}
+.feature-title { margin:0; color:#60a5fa; font-size:17px; font-weight:600; letter-spacing: 0.5px; }
+.feature-title.green { color: #34d399; }
+.feature-title.pink { color: #f472b6; }
+.feature-desc { margin:6px 0 0 0; color:#cbd5e1; font-size:13.5px; line-height: 1.5; }
+
+/* Modern Divider */
+.modern-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 30px 0;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+.modern-divider::before, .modern-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #e2e8f0;
+}
+.modern-divider:not(:empty)::before { margin-right: 1em; }
+.modern-divider:not(:empty)::after { margin-left: 1em; }
+
+/* Streamlit Modern Widgets */
+div.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 24px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+}
+div.stButton > button[kind="primary"]:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(37, 99, 235, 0.5);
+}
+div.stButton > button[kind="secondary"] {
+    border-radius: 12px;
+    border: 2px solid #e2e8f0;
+    font-weight: 600;
+    color: #475569;
+    transition: all 0.3s ease;
+}
+div.stButton > button[kind="secondary"]:hover {
+    border-color: #2563eb;
+    color: #2563eb;
+    background: transparent;
+    transform: translateY(-2px);
+}
+.stTextInput input {
+    border-radius: 12px;
+    border: 1.5px solid #cbd5e1;
+    padding: 12px 16px;
+    font-size: 15px;
+    transition: all 0.3s;
+}
+.stTextInput input:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3.5px rgba(37,99,235,0.15);
+}
+.stTabs [data-baseweb="tab-list"] { gap: 24px; }
+.stTabs [data-baseweb="tab"] {
+    height: 54px;
+    background-color: transparent;
+    border-radius: 8px 8px 0px 0px;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 15px;
+    color: #64748b;
+}
+.stTabs [aria-selected="true"] {
+    color: #2563eb !important;
+    border-bottom-color: #2563eb !important;
+}
+
+/* Dashboard Metrics & Alerts */
+.block-container {padding-top:.7rem;padding-bottom:1rem}
+.trend { border-radius:14px; padding:14px; text-align:center; font-size:25px; font-weight:800; margin-bottom:12px; }
+.box { border:2px solid; border-radius:12px; padding:12px; min-height:95px; }
+.entry {border-color:#16a34a;background:rgba(22,163,74,.08)}
+.exit {border-color:#dc2626;background:rgba(220,38,38,.08)}
+.big {font-size:25px;font-weight:800}
+.muted {font-size:12px;color:#9ca3af}
+.blinking-alert { padding: 15px; font-size: 18px; font-weight: bold; text-align: center; border-radius: 10px; border: 3px solid; animation: blinker 1.5s linear infinite; margin-bottom: 15px; }
+@keyframes blinker { 50% { opacity: 0.6; } }
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -153,24 +291,6 @@ def check_subscription_from_db(email):
     return False
 
 # ---------------------------------------------------------------------
-# CSS STYLING
-# ---------------------------------------------------------------------
-st.markdown("""
-<style>
-.block-container {padding-top:.7rem;padding-bottom:1rem}
-.trend { border-radius:14px; padding:14px; text-align:center; font-size:25px; font-weight:800; margin-bottom:12px; }
-.box { border:2px solid; border-radius:12px; padding:12px; min-height:95px; }
-.entry {border-color:#16a34a;background:rgba(22,163,74,.08)}
-.exit {border-color:#dc2626;background:rgba(220,38,38,.08)}
-.big {font-size:25px;font-weight:800}
-.muted {font-size:12px;color:#9ca3af}
-.blinking-alert { padding: 15px; font-size: 18px; font-weight: bold; text-align: center; border-radius: 10px; border: 3px solid; animation: blinker 1.5s linear infinite; margin-bottom: 15px; }
-@keyframes blinker { 50% { opacity: 0.6; } }
-.brand-title { font-size: 38px; font-weight: 800; color: #1e3a8a; }
-</style>
-""", unsafe_allow_html=True)
-
-# ---------------------------------------------------------------------
 # SESSION STATE SETUP
 # ---------------------------------------------------------------------
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
@@ -225,98 +345,112 @@ def handle_google_login(btn_key):
         st.error(f"❌ गूगल ऑथेंटिकेशन टोकन एरर: कृपया Google Cloud Console में अपना 'Redirect URI' और 'Test User' सेटिंग चेक करें। (विवरण: {e})")
 
 # =====================================================================
-# PAGE 1: STYLISH LOGIN & SIGNUP PAGE
+# PAGE 1: ULTRA MODERN LOGIN & SIGNUP PAGE
 # =====================================================================
 def login_signup_page():
-    col_left, col_right = st.columns([1.1, 1.3], gap="large")
+    col_left, col_right = st.columns([1.2, 1.0], gap="large")
 
     with col_left:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("<h1 class='brand-title'>Welcome Back!</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='color: #64748b; font-size: 16px;'>अपने अकाउंट में लॉगिन करें या साइन अप करें और NIFTY OI Brahmāstra का आनंद लें।</p>", unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown("🛡️ **Secure**<br><span style='font-size:12px;color:gray;'>डेटा सुरक्षित है</span>", unsafe_allow_html=True)
-        with c2:
-            st.markdown("⚡ **Fast**<br><span style='font-size:12px;color:gray;'>रियल-टाइम एक्सेस</span>", unsafe_allow_html=True)
-        with c3:
-            st.markdown("😊 **Friendly**<br><span style='font-size:12px;color:gray;'>आसान इंटरफेस</span>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        hero_html = """
+        <div class='hero-box'>
+            <h1 class='hero-title'>NIFTY OI Brahmāstra</h1>
+            <p class='hero-subtitle'>Experience the next generation of option chain analysis. Real-time data, proximity alerts, and intelligent trend scoring — all in one powerful dashboard.</p>
+            
+            <div class='feature-item'>
+                <div class='feature-title'>⚡ Lightning Fast</div>
+                <p class='feature-desc'>Powered by FYERS API v3 for ultra-low latency live market data updates.</p>
+            </div>
+            <div class='feature-item'>
+                <div class='feature-title green'>🎯 Precision Alerts</div>
+                <p class='feature-desc'>Auto-calculated S/R & fast-scalp swing zones with smart 50-point targets.</p>
+            </div>
+            <div class='feature-item'>
+                <div class='feature-title pink'>🛡️ Bank-Grade Security</div>
+                <p class='feature-desc'>Secured with Google OAuth 2.0 & Firebase real-time database.</p>
+            </div>
+        </div>
+        """
+        st.markdown(hero_html, unsafe_allow_html=True)
 
     with col_right:
-        with st.container():
-            st.markdown("<p style='text-align: center; color: gray; margin-bottom: 5px;'>Quick Access</p>", unsafe_allow_html=True)
-            handle_google_login("google_login_unique_btn")
-            st.divider()
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<h2 style='color:#0f172a; font-weight:800; text-align:center; font-size: 34px; margin-bottom: 5px;'>Get Started</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#64748b; font-size: 15px; margin-bottom:30px;'>Sign in to access your trading dashboard</p>", unsafe_allow_html=True)
+        
+        handle_google_login("google_login_unique_btn")
+        
+        st.markdown("<div class='modern-divider'><span>OR CONTINUE WITH EMAIL</span></div>", unsafe_allow_html=True)
 
-            auth_tab, signup_tab, forgot_tab = st.tabs(["🔑 Login", "📝 Sign Up", "🔄 Forgot Password"])
+        auth_tab, signup_tab, forgot_tab = st.tabs(["🔑 Login", "📝 Sign Up", "🔄 Reset Pass"])
 
-            # 1. LOGIN TAB
-            with auth_tab:
-                st.subheader("Login to your account")
-                login_email = st.text_input("Email Address", key="l_email", placeholder="name@example.com")
-                login_pass = st.text_input("Password", type="password", key="l_pass", placeholder="••••••••")
-                
-                remember_log = st.checkbox("Remember Me", key="rem_login")
+        # 1. LOGIN TAB
+        with auth_tab:
+            st.write("")
+            login_email = st.text_input("Email Address", key="l_email", placeholder="name@example.com")
+            login_pass = st.text_input("Password", type="password", key="l_pass", placeholder="••••••••")
+            remember_log = st.checkbox("Keep me signed in", key="rem_login")
 
-                if st.button("Login", use_container_width=True, type="primary"):
-                    if not login_email or not login_pass:
-                        st.warning("कृपया ईमेल और पासवर्ड दोनों दर्ज करें।")
-                    else:
-                        with st.spinner("लॉग इन हो रहा है..."):
-                            login_email_clean = login_email.strip().lower()
-                            user = sign_in_with_email_and_password(login_email_clean, login_pass)
-                            if "idToken" in user:
-                                sub_status = check_subscription_from_db(login_email_clean) or (login_email_clean == ADMIN_EMAIL)
-                                st.session_state.logged_in = True
-                                st.session_state.user_email = login_email_clean
-                                st.session_state.has_subscription = sub_status
-                                st.session_state.remember_me = remember_log
-                                st.success("लॉगिन सफल!")
-                                time.sleep(0.5)
-                                st.rerun()
-                            else:
-                                st.error("गलत ईमेल या पासवर्ड!")
+            st.write("")
+            if st.button("Login to Dashboard", use_container_width=True, type="primary"):
+                if not login_email or not login_pass:
+                    st.warning("कृपया ईमेल और पासवर्ड दोनों दर्ज करें।")
+                else:
+                    with st.spinner("लॉग इन हो रहा है..."):
+                        login_email_clean = login_email.strip().lower()
+                        user = sign_in_with_email_and_password(login_email_clean, login_pass)
+                        if "idToken" in user:
+                            sub_status = check_subscription_from_db(login_email_clean) or (login_email_clean == ADMIN_EMAIL)
+                            st.session_state.logged_in = True
+                            st.session_state.user_email = login_email_clean
+                            st.session_state.has_subscription = sub_status
+                            st.session_state.remember_me = remember_log
+                            st.success("✅ लॉगिन सफल!")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("❌ गलत ईमेल या पासवर्ड!")
 
-            # 2. SIGN UP TAB
-            with signup_tab:
-                st.subheader("Create a new account")
-                new_email = st.text_input("Email Address", key="s_email", placeholder="name@example.com")
-                new_pass = st.text_input("Password (min 6 chars)", type="password", key="s_pass", placeholder="••••••••")
-                
-                remember_sig = st.checkbox("Remember Me", key="rem_signup")
+        # 2. SIGN UP TAB
+        with signup_tab:
+            st.write("")
+            new_email = st.text_input("Email Address", key="s_email", placeholder="name@example.com")
+            new_pass = st.text_input("Password (min 6 chars)", type="password", key="s_pass", placeholder="••••••••")
+            remember_sig = st.checkbox("Keep me signed in", key="rem_signup")
 
-                if st.button("Sign Up with Email", use_container_width=True):
-                    if not new_email or len(new_pass) < 6:
-                        st.warning("ईमेल सही डालें और पासवर्ड कम से कम 6 अक्षरों का रखें।")
-                    else:
-                        with st.spinner("अकाउंट बनाया जा रहा है..."):
-                            new_email_clean = new_email.strip().lower()
-                            user = sign_up_with_email_and_password(new_email_clean, new_pass)
-                            if "idToken" in user:
-                                update_subscription_in_db(new_email_clean, "None", 0)
-                                st.session_state.remember_me = remember_sig
-                                st.success("अकाउंट सफलतापूर्वक बन गया! अब 'Login' टैब से लॉग इन करें।")
-                            else:
-                                st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
+            st.write("")
+            if st.button("Create Account", use_container_width=True):
+                if not new_email or len(new_pass) < 6:
+                    st.warning("ईमेल सही डालें और पासवर्ड कम से कम 6 अक्षरों का रखें।")
+                else:
+                    with st.spinner("अकाउंट बनाया जा रहा है..."):
+                        new_email_clean = new_email.strip().lower()
+                        user = sign_up_with_email_and_password(new_email_clean, new_pass)
+                        if "idToken" in user:
+                            update_subscription_in_db(new_email_clean, "None", 0)
+                            st.session_state.remember_me = remember_sig
+                            st.success("🎉 अकाउंट सफलतापूर्वक बन गया! अब 'Login' टैब से लॉग इन करें।")
+                        else:
+                            st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
 
-            # 3. FORGOT PASSWORD TAB
-            with forgot_tab:
-                st.subheader("Reset Password")
-                st.write("अपना रजिस्टर्ड ईमेल दर्ज करें, हम आपको पासवर्ड रीसेट लिंक भेजेंगे।")
-                reset_email = st.text_input("Email Address", key="r_email", placeholder="name@example.com")
-                
-                if st.button("Send Reset Link", use_container_width=True):
-                    if not reset_email:
-                        st.warning("कृपया अपना ईमेल दर्ज करें।")
-                    else:
-                        with st.spinner("लिंक भेजा जा रहा है..."):
-                            reset_email_clean = reset_email.strip().lower()
-                            res = send_password_reset_email(reset_email_clean)
-                            if "email" in res:
-                                st.success("पासवर्ड रीसेट लिंक आपके ईमेल पर भेज दिया गया है!")
-                            else:
-                                st.error("ईमेल भेजने में विफल। कृपया सही ईमेल दर्ज करें।")
+        # 3. FORGOT PASSWORD TAB
+        with forgot_tab:
+            st.write("")
+            st.info("अपना रजिस्टर्ड ईमेल दर्ज करें, हम आपको पासवर्ड रीसेट करने का लिंक भेजेंगे।")
+            reset_email = st.text_input("Email Address", key="r_email", placeholder="name@example.com")
+            
+            st.write("")
+            if st.button("Send Reset Link", use_container_width=True):
+                if not reset_email:
+                    st.warning("कृपया अपना ईमेल दर्ज करें।")
+                else:
+                    with st.spinner("लिंक भेजा जा रहा है..."):
+                        reset_email_clean = reset_email.strip().lower()
+                        res = send_password_reset_email(reset_email_clean)
+                        if "email" in res:
+                            st.success("✅ पासवर्ड रीसेट लिंक आपके ईमेल पर भेज दिया गया है!")
+                        else:
+                            st.error("❌ ईमेल भेजने में विफल। कृपया सही ईमेल दर्ज करें।")
 
 # =====================================================================
 # PAGE 2: PRICING / SUBSCRIPTION
