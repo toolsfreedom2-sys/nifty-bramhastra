@@ -19,6 +19,7 @@ import streamlit as st
 
 try:
     from fyers_apiv3 import fyersModel
+    FYERS_IMPORT_ERROR = None
 except Exception as exc:
     fyersModel = None
     FYERS_IMPORT_ERROR = str(exc)
@@ -41,8 +42,8 @@ STATE = "nifty_oi_brahmastra"
 ADMIN_EMAIL = "markam296@gmail.com"  # यहाँ अपना वह ईमेल डालें जिससे आप एडमिन बनेंगे
 FYERS_APP_ID = "IDCN3BSFJ3-100" # यहाँ अपना FYERS APP ID डालें (जैसे: ABCD123-100)
 FYERS_SECRET_KEY = "QSTYMRQY83" # यहाँ अपना FYERS Secret Key डालें
-
-
+if fyersModel is None:
+    st.error(f"⚠️ Fyers Import Error: {FYERS_IMPORT_ERROR}")
 # =====================================================================
 # 🔥 FIREBASE CONFIGURATION (AUTH & FIRESTORE)
 # =====================================================================
