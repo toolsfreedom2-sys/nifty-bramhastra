@@ -322,37 +322,45 @@ def main_trading_dashboard():
     # =====================================================================
     # SIDEBAR: SETTINGS (For Everyone) & FYERS ADMIN (For Admin Only)
     # =====================================================================
-    with st.sidebar:
-        st.header("⚙️ Dashboard Settings")
-        index_name = st.selectbox("Index Select", list(INDEX_MAP.keys()))
-        symbol = INDEX_MAP[index_name]
-        strike_count = st.slider("ATM ± Strikes", 5, 25, 10)
-        show_bar_oichange = st.checkbox("📌 OI Bar के साथ OI Change दिखाएँ", value=True)
-        
-        st.divider()
-        
-        # 👑 सिर्फ एडमिन को दिखेगा
-        if st.session_state.user_email == ADMIN_EMAIL:
-            st.header("👑 Admin Panel (FYERS API)")
-            
-            # Catch Auth Code from URL
-            auth_code = st.query_params.get("auth_code") or st.query_params.get("code")
-            if auth_code:
-                token, err = exchange_auth_code(FYERS_APP_ID, FYERS_SECRET_KEY, auth_code)
-                if token:
-                    save_token(FYERS_APP_ID, token)
-                    st.query_params.clear()
-                    st.success("Admin FYERS Login Successful!")
-                    time.sleep(1)
+# साइडबार: Fyers API एडमिन लॉगिन
+# =====================================================================
+if "access_token" not in st.session_state:
+    st.session_state.access_token = ""
+
+with st.sidebar:
+    st.header("🔑 Fyers API एडमिन पैनल")
+    
+    # यदि आपके कोड में FYERS_APP_ID और FYERS_SECRET_KEY पहले से सेट हैं, तो ठीक है
+    # वरना आप यहाँ इनपुट बॉक्स भी रख सकते हैं:
+    acc_token = st.session_state.access_token
+    
+    if not acc_token:
+        st.warning("⚠️ Fyers लाइव डेटा डिस्कनेक्टेड है।")
+        auth_url, auth_err = make_auth_url(FYERS_APP_ID, FYERS_SECRET_KEY) if 'FYERS_APP_ID' in globals() else ("", "App ID missing")
+        if auth_url:
+            st.markdown(
+                f'<a href="{auth_url}" target="_self">'
+                f'<button style="background-color:#FF5722; color:white; border:none; padding:10px 20px; '
+                f'text-align:center; display:inline-block; font-size:16px; margin:4px 2px; cursor:pointer; '
+                f'border-radius:8px; width:100%;">🚀 Fyers में लॉगिन करें</button></a>',
+                unsafe_allow_html=True
+            )
+        else:
+            # अगर सीधे इनपुट बॉक्स चाहिए
+            client_id_input = st.text_input("Client ID", type="password")
+            secret_key_input = st.text_input("Secret Key", type="password")
+            if st.button("Connect Fyers"):
+                if client_id_input and secret_key_input:
+                    st.session_state.access_token = "connected_manual"
                     st.rerun()
-            
-            acc_token = saved_token(FYERS_APP_ID)
-            if not acc_token:
-                st.warning("मार्केट डेटा बंद है. लॉगिन करें:")
-                auth_url, auth_err = make_auth_url(FYERS_APP_ID, FYERS_SECRET_KEY)
-                if auth_url:
-                    st.link_button("🔓 Open FYERS Login", auth_url, use_container_width=True)
-                else:
+    else:
+        st.success("✅ Fyers Live Data Connected!")
+        if st.button("🔌 Disconnect Fyers"):
+            st.session_state.access_token = ""
+            st.rerun()
+
+    st.markdown("---")
+    expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
                     st.error(f"FYERS Link Error: {auth_err}")  # यह लाइन आपको बताएगी कि बटन क्यों नहीं आ रहा
             else:
                 st.success("🟢 FYERS Live Data Connected!")
