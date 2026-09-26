@@ -161,47 +161,125 @@ if "live_history" not in st.session_state: st.session_state.live_history = None
 # =====================================================================
 # PAGE 1: LOGIN & SIGNUP
 # =====================================================================
-def login_signup_page():
-    st.title("🔐 NIFTY OI Brahmāstra - Login")
-    st.write("सॉफ्टवेयर इस्तेमाल करने के लिए लॉग इन या साइन अप करें।")
-    
-    tab1, tab2 = st.tabs(["Log In", "Sign Up (नया अकाउंट)"])
-    with tab1:
-        st.subheader("लॉग इन करें")
-        email = st.text_input("Email", key="login_email")
-        password = st.text_input("Password", type="password", key="login_pass")
-        if st.button("Log In", use_container_width=True):
-            if not email or not password:
-                st.warning("ईमेल और पासवर्ड दोनों डालें।")
-            else:
-                with st.spinner("लॉग इन हो रहा है..."):
-                    user = sign_in_with_email_and_password(email, password)
-                    if "idToken" in user:
-                        sub_status = check_subscription_from_db(email)
-                        if email == ADMIN_EMAIL:
-                            sub_status = True
-                        st.session_state.logged_in = True
-                        st.session_state.user_email = email
-                        st.session_state.has_subscription = sub_status
-                        st.rerun()
-                    else:
-                        st.error("ईमेल या पासवर्ड गलत है!")
+# =====================================================================
+# FIREBASE PASSWORD RESET (FORGOT PASSWORD) API
+# =====================================================================
+def send_password_reset_email(email):
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}"
+    payload = {"requestType": "PASSWORD_RESET", "email": email}
+    r = requests.post(url, json=payload)
+    return r.json()
 
-    with tab2:
-        st.subheader("नया अकाउंट बनाएं")
-        new_email = st.text_input("New Email", key="signup_email")
-        new_password = st.text_input("New Password (कम से कम 6 अक्षर)", type="password", key="signup_pass")
-        if st.button("Sign Up", use_container_width=True):
-            if not new_email or len(new_password) < 6:
-                st.warning("ईमेल सही डालें और पासवर्ड कम से कम 6 अक्षरों का रखें।")
-            else:
-                with st.spinner("अकाउंट बन रहा है..."):
-                    user = sign_up_with_email_and_password(new_email, new_password)
-                    if "idToken" in user:
-                        update_subscription_in_db(new_email, "None", 0)
-                        st.success("अकाउंट बन गया! अब आप 'Log In' टैब से लॉग इन कर सकते हैं।")
+# =====================================================================
+# PREMIUM STYLISH LOGIN & SIGNUP PAGE (Matching the design)
+# =====================================================================
+def login_signup_page():
+    # कस्टम मॉडर्न CSS स्टाइलिंग
+    st.markdown("""
+    <style>
+    .login-card {
+        background: white;
+        padding: 40px;
+        border-radius: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    .brand-title {
+        font-size: 38px;
+        font-weight: 800;
+        color: #1e3a8a;
+    }
+    .stButton>button {
+        border-radius: 10px;
+        font-weight: 600;
+        height: 45px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # दो कॉलम में लेआउट (बिल्कुल इमेज की तरह)
+    col_left, col_right = st.columns([1.1, 1.3], gap="large")
+
+    with col_left:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("<h1 class='brand-title'>Welcome Back!</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #64748b; font-size: 16px;'>अपने अकाउंट में लॉगिन करें और NIFTY OI Brahmāstra का आनंद लें।</p>", unsafe_allow_html=True)
+        
+        # फीचर्स आइकॉन और टेक्स्ट
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("🛡️ **Secure**<br><span style='font-size:12px;color:gray;'>डेटा सुरक्षित है</span>", unsafe_allow_html=True)
+        with c2:
+            st.markdown("⚡ **Fast**<br><span style='font-size:12px;color:gray;'>रियल-टाइम एक्सेस</span>", unsafe_allow_html=True)
+        with c3:
+            st.markdown("😊 **Friendly**<br><span style='font-size:12px;color:gray;'>आसान इंटरफेस</span>", unsafe_allow_html=True)
+
+    with col_right:
+        with st.container():
+            # टैब: Login और Sign Up
+            auth_tab, signup_tab, forgot_tab = st.tabs(["🔑 Login", "📝 Sign Up", "🔄 Forgot Password"])
+
+            # --- 1. LOGIN TAB ---
+            with auth_tab:
+                st.subheader("Login to your account")
+                login_email = st.text_input("Email Address", key="l_email", placeholder="name@example.com")
+                login_pass = st.text_input("Password", type="password", key="l_pass", placeholder="••••••••")
+                
+                if st.button("Login", use_container_width=True, type="primary"):
+                    if not login_email or not login_pass:
+                        st.warning("कृपया ईमेल और पासवर्ड दोनों दर्ज करें।")
                     else:
-                        st.error("यह ईमेल पहले से रजिस्टर्ड है या कोई एरर है!")
+                        with st.spinner("लॉग इन हो रहा है..."):
+                            user = sign_in_with_email_and_password(login_email, login_pass)
+                            if "idToken" in user:
+                                sub_status = check_subscription_from_db(login_email) or (login_email == ADMIN_EMAIL)
+                                st.session_state.logged_in = True
+                                st.session_state.user_email = login_email
+                                st.session_state.has_subscription = sub_status
+                                st.success("लॉगिन सफल!")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error("गलत ईमेल या पासवर्ड!")
+
+                st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or continue with</p>", unsafe_allow_html=True)
+                
+                # Google Login Button Simulation (Firebase Google Auth Integration)
+                if st.button("🌐 Continue with Google", use_container_width=True):
+                    st.info("गूगल ऑथेंटिकेशन सेटअप के लिए Firebase कंसोल में Google Sign-In एनेबल होना चाहिए।")
+
+            # --- 2. SIGN UP TAB ---
+            with signup_tab:
+                st.subheader("Create a new account")
+                new_email = st.text_input("Email Address", key="s_email", placeholder="name@example.com")
+                new_pass = st.text_input("Password (min 6 chars)", type="password", key="s_pass", placeholder="••••••••")
+                
+                if st.button("Sign Up", use_container_width=True):
+                    if not new_email or len(new_pass) < 6:
+                    else:
+                        with st.spinner("अकाउंट बनाया जा रहा है..."):
+                            user = sign_up_with_email_and_password(new_email, new_pass)
+                            if "idToken" in user:
+                                update_subscription_in_db(new_email, "None", 0)
+                                st.success("अकाउंट सफलतापूर्वक बन गया! अब 'Login' टैब से लॉग इन करें।")
+                            else:
+                                st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
+
+            # --- 3. FORGOT PASSWORD TAB ---
+            with forgot_tab:
+                st.subheader("Reset Password")
+                st.write("अपना रजिस्टर्ड ईमेल दर्ज करें, हम आपको पासवर्ड रीसेट लिंक भेजेंगे।")
+                reset_email = st.text_input("Email Address", key="r_email", placeholder="name@example.com")
+                
+                if st.button("Send Reset Link", use_container_width=True):
+                    if not reset_email:
+                        st.warning("कृपया अपना ईमेल दर्ज करें।")
+                    else:
+                        with st.spinner("लिंक भेजा जा रहा है..."):
+                            res = send_password_reset_email(reset_email)
+                            if "email" in res:
+                                st.success("पासवर्ड रीसेट लिंक आपके ईमेल पर भेज दिया गया है!")
+                            else:
+                                st.error("ईमेल भेजने में विफल। कृपया सही ईमेल दर्ज करें।")
 
 # =====================================================================
 # PAGE 2: PRICING / SUBSCRIPTION
