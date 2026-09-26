@@ -334,9 +334,11 @@ def main_trading_dashboard():
             acc_token = saved_token(FYERS_APP_ID)
             if not acc_token:
                 st.warning("मार्केट डेटा बंद है. लॉगिन करें:")
-                auth_url, _ = make_auth_url(FYERS_APP_ID, FYERS_SECRET_KEY)
+                auth_url, auth_err = make_auth_url(FYERS_APP_ID, FYERS_SECRET_KEY)
                 if auth_url:
                     st.link_button("🔓 Open FYERS Login", auth_url, use_container_width=True)
+                else:
+                    st.error(f"FYERS Link Error: {auth_err}")  # यह लाइन आपको बताएगी कि बटन क्यों नहीं आ रहा
             else:
                 st.success("🟢 FYERS Live Data Connected!")
                 if st.button("🔌 Disconnect FYERS", use_container_width=True):
