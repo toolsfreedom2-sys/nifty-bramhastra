@@ -69,8 +69,8 @@ PROJECT_ID = "nifty-brahmastra"
 # =====================================================================
 # 🌐 GOOGLE OAUTH CONFIGURATION
 # =====================================================================
-GOOGLE_CLIENT_ID = "385248154956-7n88cq4vqoo4r1rjd2vqo23uku7lsg4c.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "GOCSPX-xWEIkC1ektG8XGitB7j82gMwhiC"
+GOOGLE_CLIENT_ID = "385248154956-g338af825fvpcd86mi8b1f5jf0nor3e1.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "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"
 
 oauth2 = OAuth2Component(
     client_id=GOOGLE_CLIENT_ID,
