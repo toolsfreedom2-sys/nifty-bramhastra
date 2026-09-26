@@ -237,20 +237,34 @@ def login_signup_page():
     .orb3{width:250px;height:250px;left:8%;bottom:-120px;background:linear-gradient(135deg,#ffbd59,#ff5e8a);box-shadow:0 0 90px rgba(255,189,89,.38)}
     .orb4{width:260px;height:260px;right:9%;bottom:-140px;background:linear-gradient(135deg,#48f0b8,#3a78ff);box-shadow:0 0 90px rgba(72,240,184,.35)}
     .auth-wrap{position:relative;z-index:2;width:min(510px,calc(100vw - 30px));margin:5vh auto 0;padding:2px;border-radius:30px;background:linear-gradient(135deg,rgba(255,255,255,.75),rgba(255,255,255,.08),rgba(117,91,255,.65));box-shadow:0 35px 100px rgba(0,0,0,.48),0 0 55px rgba(117,91,255,.18)}
+    .auth-brand{position:relative;z-index:2;width:min(720px,calc(100vw - 30px));margin:4vh auto 18px;text-align:center;padding:22px 28px;border-radius:26px;background:rgba(12,18,45,.38);border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 55px rgba(0,0,0,.20);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
     .auth-card{border-radius:28px;padding:28px 34px 26px;background:linear-gradient(145deg,rgba(20,25,58,.94),rgba(27,25,70,.88));backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.12)}
     .brand-row{display:flex;justify-content:center;align-items:center;gap:12px;margin-bottom:8px}.brand-icon{width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:24px;color:white;background:linear-gradient(135deg,#ff4ecd,#7b61ff 55%,#35d9ff);box-shadow:0 10px 28px rgba(123,97,255,.45)}
     .brand-title{color:#fff;font-size:27px;font-weight:850;letter-spacing:-.5px;line-height:1.1}.brand-title span{background:linear-gradient(90deg,#ff79d6,#8fa4ff,#58e5ff);-webkit-background-clip:text;background-clip:text;color:transparent}.brand-subtitle{text-align:center;color:#b9c2df;font-size:13px;margin:6px 0 20px}
-    div[data-testid="stTabs"]{position:relative;z-index:3}div[data-testid="stTabs"] [role="tablist"]{justify-content:center;gap:7px;padding:5px;border:1px solid rgba(255,255,255,.10);border-radius:17px;background:rgba(255,255,255,.055);margin-bottom:18px}
+    div[data-testid="stTabs"]{position:relative;z-index:3;padding:24px 28px 22px;border-radius:28px;background:rgba(12,18,45,.72);border:1px solid rgba(255,255,255,.12);box-shadow:0 28px 80px rgba(0,0,0,.34);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+    div[data-testid="stTabs"] [role="tablist"]{justify-content:center;gap:7px;padding:5px;border:1px solid rgba(255,255,255,.10);border-radius:17px;background:rgba(255,255,255,.055);margin-bottom:18px}
     div[data-testid="stTabs"] button[role="tab"]{flex:1;border:0!important;border-radius:12px!important;color:#aeb9dc!important;background:transparent!important;font-weight:750!important;padding:10px 8px!important}div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:#fff!important;background:linear-gradient(135deg,#ff4ecd,#7b61ff)!important;box-shadow:0 7px 20px rgba(123,97,255,.32)}
     div[data-testid="stTextInput"] label,div[data-testid="stCheckbox"] label{color:#dce4ff!important;font-weight:650!important;font-size:13px!important}div[data-testid="stTextInput"] input{color:#fff!important;caret-color:#fff!important;background:rgba(255,255,255,.075)!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:14px!important;min-height:48px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)!important}div[data-testid="stTextInput"] input:focus{border-color:#8b78ff!important;box-shadow:0 0 0 2px rgba(123,97,255,.18),0 8px 25px rgba(0,0,0,.15)!important}div[data-testid="stTextInput"] input::placeholder{color:#7f8bb1!important}
     div.stButton>button{width:100%!important;min-height:48px!important;border:0!important;border-radius:14px!important;color:#fff!important;font-weight:800!important;font-size:14px!important;background:linear-gradient(100deg,#ff4ecd 0%,#7b61ff 52%,#3fcfff 100%)!important;box-shadow:0 12px 28px rgba(123,97,255,.28)!important;transition:transform .15s ease,box-shadow .15s ease!important}div.stButton>button:hover{transform:translateY(-2px);box-shadow:0 17px 34px rgba(123,97,255,.38)!important}
     .auth-heading{color:#fff;text-align:center;font-size:21px;font-weight:800;margin:0 0 4px}.auth-note{color:#9eabd0;text-align:center;font-size:12px;margin:0 0 16px}.divider{display:flex;align-items:center;gap:10px;margin:15px 0 12px;color:#7f8bb1;font-size:12px}.divider:before,.divider:after{content:"";height:1px;flex:1;background:rgba(255,255,255,.10)}.security-row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:18px}.security-pill{color:#aeb9dc;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:999px;padding:6px 10px;font-size:11px}.auth-footer{text-align:center;color:#6f7da6;font-size:11px;margin-top:17px}.auth-footer b{color:#a9b6e0}
-    @media(max-width:620px){.auth-wrap{margin-top:2vh}.auth-card{padding:23px 20px 22px}.brand-title{font-size:23px}.brand-icon{width:42px;height:42px;font-size:21px}div[data-testid="stTabs"] button[role="tab"]{font-size:12px!important}}
-    </style>
-    <div class="auth-bg"><div class="auth-orb orb1"></div><div class="auth-orb orb2"></div><div class="auth-orb orb3"></div><div class="auth-orb orb4"></div></div>
-    <div class="auth-wrap"><div class="auth-card"><div class="brand-row"><div class="brand-icon">⚡</div><div class="brand-title">NIFTY OI <span>Brahmāstra</span></div></div><div class="brand-subtitle">Smart • Fast • Data-Driven Market Intelligence</div></div></div>''',unsafe_allow_html=True)
+    @media(max-width:620px){.auth-brand{margin-top:2vh;padding:18px 16px}.brand-title{font-size:23px}.brand-icon{width:42px;height:42px;font-size:21px}div[data-testid="stTabs"]{padding:18px 15px 18px}div[data-testid="stTabs"] button[role="tab"]{font-size:12px!important}}
+    </style>''',unsafe_allow_html=True)
 
-    _,center,_=st.columns([0.62,1.76,0.62])
+    # Decorative background + branding are rendered with Streamlit's native HTML renderer.
+    # Keeping them outside st.markdown(style) prevents raw HTML from ever appearing as text.
+    st.html(r'''
+    <div class="auth-bg">
+      <div class="auth-orb orb1"></div><div class="auth-orb orb2"></div>
+      <div class="auth-orb orb3"></div><div class="auth-orb orb4"></div>
+    </div>
+    <div class="auth-brand">
+      <div class="brand-row"><div class="brand-icon">⚡</div>
+      <div class="brand-title">NIFTY OI <span>Brahmāstra</span></div></div>
+      <div class="brand-subtitle">Smart • Fast • Data-Driven Market Intelligence</div>
+    </div>
+    ''')
+
+    _,center,_=st.columns([0.72,1.56,0.72])
     with center:
         auth_tab,signup_tab,forgot_tab=st.tabs(["🔐 Login","✨ Sign Up","🔄 Reset"])
         with auth_tab:
