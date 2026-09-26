@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH)
+NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
 """
 
@@ -69,8 +69,8 @@ PROJECT_ID = "nifty-brahmastra"
 # =====================================================================
 # 🌐 GOOGLE OAUTH CONFIGURATION
 # =====================================================================
-GOOGLE_CLIENT_ID = "385248154956-g338af825fvpcd86mi8b1f5jf0nor3e1.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "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"
+GOOGLE_CLIENT_ID = "385248154956-7n88cq4vqoo4r1rjd2vqo23uku7lsg4c.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "GOCSPX-xWEIkC1ektG8XGitB7j82gMwhiC"
 
 oauth2 = OAuth2Component(
     client_id=GOOGLE_CLIENT_ID,
@@ -163,7 +163,7 @@ st.markdown("""
 .exit {border-color:#dc2626;background:rgba(220,38,38,.08)}
 .big {font-size:25px;font-weight:800}
 .muted {font-size:12px;color:#9ca3af}
-.blinking-alert { padding: 15px; font-size: 20px; font-weight: bold; text-align: center; border-radius: 10px; border: 3px solid; animation: blinker 1.5s linear infinite; margin-bottom: 20px; }
+.blinking-alert { padding: 15px; font-size: 18px; font-weight: bold; text-align: center; border-radius: 10px; border: 3px solid; animation: blinker 1.5s linear infinite; margin-bottom: 15px; }
 @keyframes blinker { 50% { opacity: 0.6; } }
 .brand-title { font-size: 38px; font-weight: 800; color: #1e3a8a; }
 </style>
@@ -180,7 +180,7 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# HELPER: GOOGLE AUTH HANDLER (With Detailed Error Catching)
+# HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
 # =====================================================================
 def handle_google_login(btn_key):
     try:
@@ -320,7 +320,7 @@ def pricing_page():
     with col1:
         st.markdown("### 🥉 Monthly Plan")
         st.markdown("<h2>₹499 / month</h2>", unsafe_allow_html=True)
-        st.write("✔️ Live Option Chain\n✔️ Advanced Proximity Alerts\n✔️ 15/30/60m OI Shift Data\n✔️ Delta & Theta Analysis")
+        st.write("✔️ Live Option Chain\n✔️ Advanced Proximity & Swing Alerts\n✔️ 15/30/60m OI Shift Data\n✔️ Delta & Theta Analysis")
         st.link_button("👉 Pay ₹499 (Razorpay)", "https://rzp.io/rzp/DOV54Zg", use_container_width=True)
         st.info("💡 **नोट:** पेमेंट करने के बाद, अपनी रजिस्टर्ड ईमेल आईडी एडमिन को भेजें। आपका अकाउंट 10 से 15 मिनट के भीतर एक्टिवेट कर दिया जाएगा।")
             
@@ -440,7 +440,7 @@ def main_trading_dashboard():
                     st.rerun()
 
         st.divider()
-        expiry_date = st.text_input("Expiry Date", value="24OCT")
+        expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
 
     access_token = saved_token(FYERS_APP_ID)
     if not access_token:
@@ -574,6 +574,14 @@ def main_trading_dashboard():
             x = above.copy(); x["s"] = x["ce_oi"].clip(lower=0) + 0.5 * x["ce_oich"].clip(lower=0)
             res = float(x.sort_values(["s", "strike"], ascending=[False, True]).iloc[0]["strike"])
         return sup, res
+
+    def get_swing_levels(history_response):
+        if not isinstance(history_response, dict) or str(history_response.get("s", "")).lower() != "ok": return None, None
+        candles = history_response.get("candles", [])
+        if len(candles) < 10: return None, None
+        highs = [c[2] for c in candles[-30:]]
+        lows = [c[3] for c in candles[-30:]]
+        return min(lows), max(highs)
 
     def entry_exit(spot, sup, res, score):
         if spot is None: return None, None, "WAIT"
@@ -718,28 +726,33 @@ def main_trading_dashboard():
     pain = max_pain(df)
     entry, exit_level, mode = entry_exit(spot, support, resistance, score)
 
+    # SUPPORT / RESISTANCE 50-POINT ALERT
     alert_html = ""
     if spot and support and resistance:
         if abs(spot - support) <= 15 and score >= -0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🚀 BUY ALERT: Market Support ({support:.0f}) के करीब है! Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</div>"
+            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🚀 S/R BUY ALERT: Support ({support:.0f}) के पास! Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</div>"
         elif abs(spot - resistance) <= 15 and score <= 0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>⚠️ SELL ALERT: Market Resistance ({resistance:.0f}) के करीब है! Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</div>"
+            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>⚠️ S/R SELL ALERT: Resistance ({resistance:.0f}) के पास! Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</div>"
     if alert_html: st.markdown(alert_html, unsafe_allow_html=True)
 
+    # SWING HIGH / LOW FAST SCALP ALERT (NEW FEATURE)
+    swing_low, swing_high = get_swing_levels(st.session_state.live_history)
+    swing_alert_html = ""
+    if spot and swing_low and swing_high:
+        if abs(spot - swing_low) <= 15 and score >= -0.05:
+            swing_alert_html = f"<div class='blinking-alert' style='background-color:#e0f2fe; color:#0369a1; border-color:#0284c7;'>⚡ SWING BUY ALERT (Fast Scalp): Local Swing Low ({swing_low:.0f}) के पास! Entry: {swing_low:.0f} | Target: {swing_low+50:.0f} | SL: {swing_low-15:.0f}</div>"
+        elif abs(spot - swing_high) <= 15 and score <= 0.05:
+            swing_alert_html = f"<div class='blinking-alert' style='background-color:#fef3c7; color:#92400e; border-color:#f59e0b;'>⚡ SWING SELL ALERT (Fast Scalp): Local Swing High ({swing_high:.0f}) के पास! Entry: {swing_high:.0f} | Target: {swing_high-50:.0f} | SL: {swing_high+15:.0f}</div>"
+    if swing_alert_html: st.markdown(swing_alert_html, unsafe_allow_html=True)
+
+    # METRICS ROW (Includes India VIX & Change %)
     a, b, c, d, e, f = st.columns(6)
     a.metric("NIFTY Spot", fmt_price(spot))
     b.metric("CALL OI", fmt_num(meta["call_oi"]))
     c.metric("PUT OI", fmt_num(meta["put_oi"]))
-    d.metric(
-                "PCR",
-                f"{(meta['put_oi']/meta['call_oi'] if meta['call_oi'] else 0):.2f}",
-    )
+    d.metric("PCR", f"{(meta['put_oi']/meta['call_oi'] if meta['call_oi'] else 0):.2f}")
     e.metric("MAX PAIN", f"{pain:.0f}" if pain else "-")
-    f.metric(
-                "India VIX",
-                f"{meta['vix']:.2f}",
-                delta=f"{meta['vix_change_pct']:.2f}%",
-    )
+    f.metric("India VIX", f"{meta['vix']:.2f}", delta=f"{meta['vix_change_pct']:.2f}%")
 
     bg = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "SIDEWAYS": "#eab308"}.get(trend, "#6b7280")
     st.markdown(f"<div class='trend' style='background:{bg};color:white'>TREND: {trend} | SCORE: {score:+.3f}</div>", unsafe_allow_html=True)
