@@ -231,133 +231,6 @@ def handle_google_login(btn_key):
 # PAGE 1: STYLISH LOGIN & SIGNUP PAGE
 # =====================================================================
 def login_signup_page():
-
-    # MODERN AUTH POPUP STYLE
-    st.markdown("""
-    <style>
-    /* Main auth popup/card */
-    div[data-testid="stTabs"] {
-        width: min(760px, 96vw) !important;
-        margin: 12px auto 0 auto !important;
-    }
-
-    div[data-testid="stTabs"] > div:first-child {
-        gap: 8px !important;
-        background: rgba(255,255,255,0.94) !important;
-        padding: 8px !important;
-        border-radius: 18px !important;
-        border: 1px solid rgba(0,0,0,0.08) !important;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.10) !important;
-    }
-
-    div[data-testid="stTabs"] button[role="tab"] {
-        min-height: 52px !important;
-        padding: 10px 20px !important;
-        border-radius: 13px !important;
-        font-size: 16px !important;
-        font-weight: 700 !important;
-        color: #334155 !important;
-        background: #f8fafc !important;
-        border: 1px solid #e2e8f0 !important;
-        transition: all .18s ease !important;
-    }
-
-    div[data-testid="stTabs"] button[role="tab"]:hover {
-        background: #eef2ff !important;
-        color: #1d4ed8 !important;
-        transform: translateY(-1px) !important;
-    }
-
-    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-        color: #ffffff !important;
-        background: linear-gradient(135deg, #2563eb, #4f46e5) !important;
-        border-color: transparent !important;
-        box-shadow: 0 6px 18px rgba(37,99,235,.28) !important;
-    }
-
-    /* Popup-like tab content */
-    div[data-testid="stTabContent"] {
-        background: rgba(255,255,255,0.98) !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 22px !important;
-        padding: 28px 30px 30px !important;
-        margin-top: 12px !important;
-        box-shadow: 0 18px 45px rgba(15,23,42,.14) !important;
-    }
-
-    /* Desktop input readability */
-    div[data-testid="stTextInput"] input {
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        background-color: #ffffff !important;
-        caret-color: #2563eb !important;
-        font-size: 16px !important;
-        font-weight: 500 !important;
-        min-height: 46px !important;
-        border-radius: 12px !important;
-    }
-
-    div[data-testid="stTextInput"] input::placeholder {
-        color: #64748b !important;
-        -webkit-text-fill-color: #64748b !important;
-        opacity: 1 !important;
-    }
-
-    /* Browser autofill */
-    div[data-testid="stTextInput"] input:-webkit-autofill,
-    div[data-testid="stTextInput"] input:-webkit-autofill:hover,
-    div[data-testid="stTextInput"] input:-webkit-autofill:focus {
-        -webkit-text-fill-color: #111827 !important;
-        caret-color: #2563eb !important;
-        transition: background-color 9999s ease-out 0s !important;
-    }
-
-    /* Larger, clearer action buttons */
-    div[data-testid="stButton"] > button {
-        min-height: 52px !important;
-        border-radius: 13px !important;
-        font-size: 16px !important;
-        font-weight: 750 !important;
-        letter-spacing: .1px !important;
-        padding: 10px 18px !important;
-        box-shadow: 0 5px 14px rgba(15,23,42,.10) !important;
-    }
-
-    div[data-testid="stButton"] > button:hover {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 8px 20px rgba(15,23,42,.16) !important;
-    }
-
-    /* Login primary action */
-    div[data-testid="stButton"] button[kind="primary"] {
-        min-height: 56px !important;
-        font-size: 17px !important;
-        border-radius: 14px !important;
-    }
-
-    /* Checkbox readability */
-    div[data-testid="stCheckbox"] label {
-        font-size: 14px !important;
-        font-weight: 600 !important;
-        color: #475569 !important;
-    }
-
-    @media (max-width: 700px) {
-        div[data-testid="stTabs"] {
-            width: 100% !important;
-        }
-        div[data-testid="stTabs"] button[role="tab"] {
-            min-height: 48px !important;
-            padding: 8px 10px !important;
-            font-size: 14px !important;
-        }
-        div[data-testid="stTabContent"] {
-            padding: 22px 18px 24px !important;
-            border-radius: 18px !important;
-        }
-    }
-    </style>
-    """, unsafe_allow_html=True)
     """Modern colorful authentication page for NIFTY OI Brahmāstra."""
     st.markdown(r'''<style>
     .stApp{background:radial-gradient(circle at 8% 12%,rgba(255,107,168,.30),transparent 25%),radial-gradient(circle at 92% 14%,rgba(86,204,242,.30),transparent 26%),radial-gradient(circle at 18% 92%,rgba(123,97,255,.28),transparent 28%),radial-gradient(circle at 88% 88%,rgba(255,180,76,.25),transparent 25%),linear-gradient(135deg,#111936 0%,#1b1550 38%,#162d68 68%,#0c1837 100%) !important;min-height:100vh!important}
@@ -375,12 +248,20 @@ def login_signup_page():
     .brand-logo{display:block;width:min(390px,82vw);height:auto;max-height:150px;object-fit:contain;filter:drop-shadow(0 12px 28px rgba(0,0,0,.35))}
     .brand-subtitle{text-align:center;color:#b9c2df;font-size:13px;margin:6px 0 20px}
     div[data-testid="stTabs"]{position:relative;z-index:3;padding:24px 28px 22px;border-radius:28px;background:rgba(12,18,45,.72);border:1px solid rgba(255,255,255,.12);box-shadow:0 28px 80px rgba(0,0,0,.34);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
-    div[data-testid="stTabs"] [role="tablist"]{justify-content:center;gap:7px;padding:5px;border:1px solid rgba(255,255,255,.10);border-radius:17px;background:rgba(255,255,255,.055);margin-bottom:18px}
-    div[data-testid="stTabs"] button[role="tab"]{flex:1;border:0!important;border-radius:13px!important;color:#f4f7ff!important;background:rgba(255,255,255,.035)!important;font-weight:850!important;font-size:18px!important;line-height:1.25!important;padding:14px 12px!important;min-height:52px!important;text-shadow:0 1px 2px rgba(0,0,0,.35)!important;transition:all .18s ease!important}div[data-testid="stTabs"] button[role="tab"]:hover{color:#fff!important;background:rgba(255,255,255,.10)!important}div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:#fff!important;background:linear-gradient(135deg,#ff4ecd,#7b61ff)!important;box-shadow:0 8px 24px rgba(123,97,255,.38)!important;text-shadow:0 1px 3px rgba(0,0,0,.45)!important}
+    /* Large popup-style Login / Sign Up / Reset navigation */
+div[data-testid="stTabs"]{width:100%!important;box-sizing:border-box!important;margin:0 auto!important;padding:24px 26px 28px!important;border-radius:32px!important;background:linear-gradient(145deg,rgba(13,20,50,.96),rgba(30,22,72,.94))!important;border:1px solid rgba(255,255,255,.18)!important;box-shadow:0 30px 90px rgba(0,0,0,.48),0 0 45px rgba(123,97,255,.16)!important}
+div[data-testid="stTabs"] [data-baseweb="tab-list"],div[data-testid="stTabs"] [role="tablist"]{display:flex!important;align-items:stretch!important;justify-content:stretch!important;gap:10px!important;padding:7px!important;margin:0 0 24px!important;border:1px solid rgba(255,255,255,.14)!important;border-radius:22px!important;background:rgba(3,8,25,.68)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 12px 30px rgba(0,0,0,.18)!important}
+div[data-testid="stTabs"] button[role="tab"]{flex:1 1 0!important;min-width:0!important;height:64px!important;min-height:64px!important;margin:0!important;padding:12px 8px!important;border:1px solid transparent!important;border-radius:17px!important;color:#dce5ff!important;background:rgba(255,255,255,.035)!important;font-weight:850!important;font-size:19px!important;line-height:1.15!important;letter-spacing:.15px!important;text-align:center!important;text-shadow:0 2px 5px rgba(0,0,0,.42)!important;transition:all .2s ease!important;cursor:pointer!important}
+div[data-testid="stTabs"] button[role="tab"]:hover{color:#fff!important;background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.14)!important;transform:translateY(-1px)!important}
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:#fff!important;background:linear-gradient(135deg,#ff43c8 0%,#845dff 52%,#3ccfff 100%)!important;border-color:rgba(255,255,255,.24)!important;box-shadow:0 10px 28px rgba(123,97,255,.42),inset 0 1px 0 rgba(255,255,255,.25)!important;text-shadow:0 2px 5px rgba(0,0,0,.5)!important;transform:translateY(-1px)!important}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none!important}
+div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none!important}
+div[data-testid="stTabs"] [data-baseweb="tab-panel"]{padding-top:4px!important}
+
     div[data-testid="stTextInput"] label,div[data-testid="stCheckbox"] label{color:#dce4ff!important;font-weight:650!important;font-size:13px!important}div[data-testid="stTextInput"] input{color:#111827!important;-webkit-text-fill-color:#111827!important;caret-color:#111827!important;background:#fff!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:14px!important;min-height:48px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)!important}div[data-testid="stTextInput"] input:focus{color:#111827!important;-webkit-text-fill-color:#111827!important;border-color:#8b78ff!important;box-shadow:0 0 0 2px rgba(123,97,255,.18),0 8px 25px rgba(0,0,0,.15)!important}div[data-testid="stTextInput"] input::placeholder{color:#6b7280!important;opacity:1!important}div[data-testid="stTextInput"] input:-webkit-autofill,div[data-testid="stTextInput"] input:-webkit-autofill:hover,div[data-testid="stTextInput"] input:-webkit-autofill:focus{ -webkit-text-fill-color:#111827!important;-webkit-box-shadow:0 0 0 1000px #fff inset!important;box-shadow:0 0 0 1000px #fff inset!important;}
     div.stButton>button{width:100%!important;min-height:48px!important;border:0!important;border-radius:14px!important;color:#fff!important;font-weight:800!important;font-size:14px!important;background:linear-gradient(100deg,#ff4ecd 0%,#7b61ff 52%,#3fcfff 100%)!important;box-shadow:0 12px 28px rgba(123,97,255,.28)!important;transition:transform .15s ease,box-shadow .15s ease!important}div.stButton>button:hover{transform:translateY(-2px);box-shadow:0 17px 34px rgba(123,97,255,.38)!important}
     .auth-heading{color:#fff;text-align:center;font-size:21px;font-weight:800;margin:0 0 4px}.auth-note{color:#9eabd0;text-align:center;font-size:12px;margin:0 0 16px}.divider{display:flex;align-items:center;gap:10px;margin:15px 0 12px;color:#7f8bb1;font-size:12px}.divider:before,.divider:after{content:"";height:1px;flex:1;background:rgba(255,255,255,.10)}.security-row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:18px}.security-pill{color:#aeb9dc;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:999px;padding:6px 10px;font-size:11px}.auth-footer{text-align:center;color:#6f7da6;font-size:11px;margin-top:17px}.auth-footer b{color:#a9b6e0}
-    @media(max-width:620px){.auth-brand{margin-top:2vh;padding:18px 16px}.brand-logo{width:min(320px,84vw);max-height:120px}div[data-testid="stTabs"]{padding:18px 15px 18px}div[data-testid="stTabs"] button[role="tab"]{font-size:15px!important;padding:12px 8px!important;min-height:48px!important}}
+    @media(max-width:620px){.auth-brand{margin-top:2vh;padding:18px 16px}.brand-logo{width:min(320px,84vw);max-height:120px}div[data-testid="stTabs"]{padding:18px 12px 22px!important;border-radius:25px!important}div[data-testid="stTabs"] [role="tablist"],div[data-testid="stTabs"] [data-baseweb="tab-list"]{gap:6px!important;padding:5px!important;border-radius:18px!important;margin-bottom:20px!important}div[data-testid="stTabs"] button[role="tab"]{font-size:14px!important;padding:10px 5px!important;height:54px!important;min-height:54px!important;border-radius:13px!important}}
     </style>''',unsafe_allow_html=True)
 
     # Decorative background + branding are rendered with Streamlit's native HTML renderer.
