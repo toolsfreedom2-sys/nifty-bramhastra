@@ -167,7 +167,7 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# GOOGLE LOGIN COMPONENT
+# GOOGLE LOGIN COMPONENT (Fixed with Redirect Flow for Streamlit Iframe)
 # =====================================================================
 def google_login_button():
     google_auth_html = f"""
@@ -176,7 +176,7 @@ def google_login_button():
     <head>
         <script type="module">
             import {{ initializeApp }} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-            import {{ getAuth, GoogleAuthProvider, signInWithPopup }} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+            import {{ getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult }} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
             const firebaseConfig = {{
                 apiKey: "{FIREBASE_API_KEY}",
@@ -188,17 +188,22 @@ def google_login_button():
             const auth = getAuth(app);
             const provider = new GoogleAuthProvider();
 
-            window.signInWithGoogle = function() {{
-                signInWithPopup(auth, provider)
-                .then((result) => {{
+            // लॉगिन के बाद वापस लौटने पर रिजल्ट चेक करना
+            getRedirectResult(auth)
+            .then((result) => {{
+                if (result && result.user) {{
                     const user = result.user;
                     window.parent.postMessage({{
                         type: 'google_login_success',
                         email: user.email
                     }}, "*");
-                }}).catch((error) => {{
-                    console.error(error);
-                }});
+                }}
+            }}).catch((error) => {{
+                console.error("Google Auth Error:", error);
+            }});
+
+            window.signInWithGoogle = function() {{
+                signInWithRedirect(auth, provider);
             }}
         </script>
     </head>
@@ -214,7 +219,7 @@ def google_login_button():
     </body>
     </html>
     """
-    components.html(google_auth_html, height=60)
+    components.html(google_auth_html, height=70)
 
 # =====================================================================
 # PAGE 1: STYLISH LOGIN & SIGNUP PAGE (Google & Custom Email for Both)
