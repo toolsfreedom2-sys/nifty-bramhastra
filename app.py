@@ -328,41 +328,43 @@ if "access_token" not in st.session_state:
     st.session_state.access_token = ""
 
 with st.sidebar:
-    st.header("🔑 Fyers API एडमिन पैनल")
+    st.header("⚙️ Dashboard Settings")
+    show_bar_oichange = st.checkbox("📌 OI Bar के साथ OI Change दिखाएँ", value=True)
+    strike_count = st.slider("ATM ± Strikes", 5, 25, 10)
     
-    # =====================================================================
-# 👑 सिर्फ एडमिन को दिखेगा (Fyers API Login Panel)
-# =====================================================================
-if st.session_state.user_email == ADMIN_EMAIL:
-    st.header("👑 Admin Panel (FYERS API)")
+    st.divider()
     
-    # Catch Auth Code from URL
-    auth_code = st.query_params.get("auth_code") or st.query_params.get("code")
-    if auth_code:
-        token, err = exchange_auth_code(FYERS_APP_ID, FYERS_SECRET_KEY, auth_code)
-        if token:
-            save_token(FYERS_APP_ID, token)
-            st.query_params.clear()
-            st.success("Admin FYERS Login Successful!")
-            time.sleep(1)
-            st.rerun()
+    # 👑 सिर्फ एडमिन को दिखेगा (Fyers API Login Panel)
+    if st.session_state.get("user_email") == ADMIN_EMAIL:
+        st.header("👑 Admin Panel (FYERS API)")
+        
+        # Catch Auth Code from URL
+        auth_code = st.query_params.get("auth_code") or st.query_params.get("code")
+        if auth_code:
+            token, err = exchange_auth_code(FYERS_APP_ID, FYERS_SECRET_KEY, auth_code)
+            if token:
+                save_token(FYERS_APP_ID, token)
+                st.query_params.clear()
+                st.success("Admin FYERS Login Successful!")
+                time.sleep(1)
+                st.rerun()
 
-    acc_token = saved_token(FYERS_APP_ID)
-    if not acc_token:
-        st.warning("मार्केट डेटा बंद है। लॉगिन करें:")
-        auth_url, auth_err = make_auth_url(FYERS_APP_ID, FYERS_SECRET_KEY)
-        if auth_url:
-            st.link_button("🔓 Open FYERS Login", auth_url, use_container_width=True)
+        acc_token = saved_token(FYERS_APP_ID)
+        if not acc_token:
+            st.warning("मार्केट डेटा बंद है। लॉगिन करें:")
+            auth_url, auth_err = make_auth_url(FYERS_APP_ID, FYERS_SECRET_KEY)
+            if auth_url:
+                st.link_button("🔓 Open FYERS Login", auth_url, use_container_width=True)
+            else:
+                st.error(f"FYERS Link Error: {auth_err}")
         else:
-            st.error(f"FYERS Link Error: {auth_err}")
-    else:
-        st.success("✅ FYERS Live Data Connected!")
-        if st.button("🔌 Disconnect FYERS", use_container_width=True):
-            save_token(FYERS_APP_ID, "")
-            st.rerun()
+            st.success("✅ FYERS Live Data Connected!")
+            if st.button("🔌 Disconnect FYERS", use_container_width=True):
+                save_token(FYERS_APP_ID, "")
+                st.rerun()
 
-st.divider()
-expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
+    st.divider()
+    expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
         if st.button("🚪 Logout", use_container_width=True, key="dash_logout_sb"):
             st.session_state.logged_in = False
             st.session_state.has_subscription = False
