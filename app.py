@@ -248,6 +248,7 @@ def login_signup_page():
                     st.info("गूगल ऑथेंटिकेशन सेटअप के लिए Firebase कंसोल में Google Sign-In एनेबल होना चाहिए।")
 
             # --- 2. SIGN UP TAB ---
+            # --- 2. SIGN UP TAB ---
             with signup_tab:
                 st.subheader("Create a new account")
                 new_email = st.text_input("Email Address", key="s_email", placeholder="name@example.com")
@@ -255,6 +256,7 @@ def login_signup_page():
                 
                 if st.button("Sign Up", use_container_width=True):
                     if not new_email or len(new_pass) < 6:
+                        st.warning("ईमेल सही डालें और पासवर्ड कम से कम 6 अक्षरों का रखें।")
                     else:
                         with st.spinner("अकाउंट बनाया जा रहा है..."):
                             user = sign_up_with_email_and_password(new_email, new_pass)
