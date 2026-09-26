@@ -180,45 +180,46 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
+# HELPER: GOOGLE AUTH HANDLER (With Detailed Error Catching)
 # =====================================================================
 def handle_google_login(btn_key):
-    result = oauth2.authorize_button(
-        name="Continue with Google",
-        icon="https://www.svgrepo.com/show/475656/google-color.svg",
-        redirect_uri=REDIRECT_URI,
-        scope="openid email profile",
-        key=btn_key,
-        use_container_width=True
-    )
-    
-    if result:
-        try:
+    try:
+        result = oauth2.authorize_button(
+            name="Continue with Google",
+            icon="https://www.svgrepo.com/show/475656/google-color.svg",
+            redirect_uri=REDIRECT_URI,
+            scope="openid email profile",
+            key=btn_key,
+            use_container_width=True
+        )
+        
+        if result:
             token = result.get("token")
             if token:
                 access_token = token.get("access_token")
-                res = requests.get(f"https://www.googleapis.com/oauth2/v1/userinfo?access_token={access_token}")
-                user_info = res.json()
-                user_email = user_info.get("email")
-                
-                if user_email:
-                    sub_status = check_subscription_from_db(user_email) or (user_email == ADMIN_EMAIL)
+                if access_token:
+                    res = requests.get(f"https://www.googleapis.com/oauth2/v1/userinfo?access_token={access_token}")
+                    user_info = res.json()
+                    user_email = user_info.get("email")
                     
-                    if user_email != ADMIN_EMAIL:
-                        doc_id = format_email_for_db(user_email)
-                        check_url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/users/{doc_id}?key={FIREBASE_API_KEY}"
-                        chk_r = requests.get(check_url)
-                        if chk_r.status_code != 200:
-                            update_subscription_in_db(user_email, "None", 0)
+                    if user_email:
+                        sub_status = check_subscription_from_db(user_email) or (user_email == ADMIN_EMAIL)
+                        
+                        if user_email != ADMIN_EMAIL:
+                            doc_id = format_email_for_db(user_email)
+                            check_url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/users/{doc_id}?key={FIREBASE_API_KEY}"
+                            chk_r = requests.get(check_url)
+                            if chk_r.status_code != 200:
+                                update_subscription_in_db(user_email, "None", 0)
 
-                    st.session_state.logged_in = True
-                    st.session_state.user_email = user_email
-                    st.session_state.has_subscription = sub_status
-                    st.success(f"✅ लॉगिन सफल: {user_email}")
-                    time.sleep(0.5)
-                    st.rerun()
-        except Exception as e:
-            st.error(f"❌ गूगल ऑथेंटिकेशन एरर: {e}")
+                        st.session_state.logged_in = True
+                        st.session_state.user_email = user_email
+                        st.session_state.has_subscription = sub_status
+                        st.success(f"✅ लॉगिन सफल: {user_email}")
+                        time.sleep(0.5)
+                        st.rerun()
+    except Exception as e:
+        st.error(f"❌ गूगल ऑथेंटिकेशन टोकन एरर: कृपया Google Cloud Console में अपना 'Redirect URI' और 'Test User' सेटिंग चेक करें। (विवरण: {e})")
 
 # =====================================================================
 # PAGE 1: STYLISH LOGIN & SIGNUP PAGE
