@@ -644,9 +644,12 @@ def main_trading_dashboard():
                 st.session_state.last_fetch = now
                 add_snapshot(rows)
             else:
-                # 🛑 अगर आज शनिवार/रविवार है और API डेटा नहीं दे रही, तो डमी डेटा लोड करें ताकि स्क्रीन अटके नहीं
-                st.warning("⚠️ मार्केट बंद है (Weekend)! लाइव डेटा उपलब्ध नहीं है, इसलिए टेस्ट मोड एक्टिव है।")
-        except Exception as e: 
+                # 🛑 यदि आज मार्केट बंद है या नया डेटा नहीं आ रहा, 
+                # तो पुराना/आखिरी डेटा ही स्क्रीन पर शो होता रहेगा (कुछ खाली नहीं होगा)
+                if st.session_state.live_chain is None:
+                    st.info("ℹ️ आज मार्केट बंद है। कृपया सोमवार को बाजार खुलने पर लाइव डेटा देखें या Fyers API कनेक्ट करें।")
+        except Exception as e:
+            # एरर आने पर भी पुराना डेटा बना रहेगा
             pass
 
         st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE")
