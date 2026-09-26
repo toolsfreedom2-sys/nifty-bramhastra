@@ -726,12 +726,20 @@ def main_trading_dashboard():
             alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>⚠️ SELL ALERT: Market Resistance ({resistance:.0f}) के करीब है! Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</div>"
     if alert_html: st.markdown(alert_html, unsafe_allow_html=True)
 
-    a, b, c, d, e = st.columns(5)
-    a.metric("NIFTY Spot", fmt_price(spot))
+    a, b, c, d, e, f = st.columns(6)
+        a.metric("NIFTY Spot", fmt_price(spot))
     b.metric("CALL OI", fmt_num(meta["call_oi"]))
     c.metric("PUT OI", fmt_num(meta["put_oi"]))
-    d.metric("PCR", f"{(meta['put_oi']/meta['call_oi'] if meta['call_oi'] else 0):.2f}")
+    d.metric(
+                "PCR",
+                f"{(meta['put_oi']/meta['call_oi'] if meta['call_oi'] else 0):.2f}",
+    )
     e.metric("MAX PAIN", f"{pain:.0f}" if pain else "-")
+    f.metric(
+                "India VIX",
+                f"{meta['vix']:.2f}",
+                delta=f"{meta['vix_change_pct']:.2f}%",
+    )
 
     bg = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "SIDEWAYS": "#eab308"}.get(trend, "#6b7280")
     st.markdown(f"<div class='trend' style='background:{bg};color:white'>TREND: {trend} | SCORE: {score:+.3f}</div>", unsafe_allow_html=True)
