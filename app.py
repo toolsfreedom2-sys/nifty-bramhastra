@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION)
-Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google Auth
+NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH)
+Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
 """
 
 import json
@@ -16,7 +16,7 @@ from collections import deque
 import numpy as np
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
+from streamlit_oauth import OAuth2Component
 
 try:
     from fyers_apiv3 import fyersModel
@@ -65,6 +65,20 @@ if fyersModel is None:
 # =====================================================================
 FIREBASE_API_KEY = "AIzaSyARH5t0KeSfCAFXtJsVwZ4mQQPh1tiFQ10" 
 PROJECT_ID = "nifty-brahmastra"  
+
+# =====================================================================
+# 🌐 GOOGLE OAUTH CONFIGURATION (Google Cloud Credentials)
+# =====================================================================
+GOOGLE_CLIENT_ID = "385248154956-7n88cq4vqoo4r1rjd2vqo23uku7lsg4c.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "GOCSPX-xWEIkC1ektG8XGitB7j82gMwhiC"
+
+oauth2 = OAuth2Component(
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    authorize_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
+    token_endpoint="https://oauth2.googleapis.com/token",
+    revoke_endpoint="https://oauth2.googleapis.com/revoke"
+)
 
 INDEX_MAP = {
     "NIFTY 50": "NSE:NIFTY50-INDEX",
@@ -167,62 +181,48 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# GOOGLE LOGIN COMPONENT (Fixed with Redirect Flow for Streamlit Iframe)
+# HELPER: GOOGLE AUTH HANDLER
 # =====================================================================
-def google_login_button():
-    google_auth_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <script type="module">
-            import {{ initializeApp }} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-            import {{ getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult }} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+def handle_google_login():
+    result = oauth2.authorize_button(
+        name="Continue with Google",
+        icon="https://www.svgrepo.com/show/475656/google-color.svg",
+        redirect_uri=REDIRECT_URI,
+        scope="openid email profile",
+        key=f"google_auth_{time.time()}",
+        use_container_width=True
+    )
+    if result:
+        try:
+            access_token = result.get("token", {}).get("access_token")
+            if access_token:
+                res = requests.get(f"https://www.googleapis.com/oauth2/v1/userinfo?access_token={access_token}")
+                user_info = res.json()
+                user_email = user_info.get("email")
+                if user_email:
+                    # यदि यूजर नया है तो डेटाबेस में एंट्री करें
+                    sub_status = check_subscription_from_db(user_email)
+                    if user_email == ADMIN_EMAIL:
+                        sub_status = True
+                    else:
+                        # अगर पहली बार गूगल से आया है और रिकॉर्ड नहीं है तो जोड़े
+                        doc_id = format_email_for_db(user_email)
+                        check_url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/users/{doc_id}?key={FIREBASE_API_KEY}"
+                        chk_r = requests.get(check_url)
+                        if chk_r.status_code != 200:
+                            update_subscription_in_db(user_email, "None", 0)
 
-            const firebaseConfig = {{
-                apiKey: "{FIREBASE_API_KEY}",
-                authDomain: "{PROJECT_ID}.firebaseapp.com",
-                projectId: "{PROJECT_ID}"
-            }};
-
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const provider = new GoogleAuthProvider();
-
-            // लॉगिन के बाद वापस लौटने पर रिजल्ट चेक करना
-            getRedirectResult(auth)
-            .then((result) => {{
-                if (result && result.user) {{
-                    const user = result.user;
-                    window.parent.postMessage({{
-                        type: 'google_login_success',
-                        email: user.email
-                    }}, "*");
-                }}
-            }}).catch((error) => {{
-                console.error("Google Auth Error:", error);
-            }});
-
-            window.signInWithGoogle = function() {{
-                signInWithRedirect(auth, provider);
-            }}
-        </script>
-    </head>
-    <body>
-        <button onclick="signInWithGoogle()" style="
-            background-color: white; color: #333; border: 1px solid #cbd5e1;
-            padding: 10px 20px; border-radius: 10px; font-size: 16px; font-weight: 600;
-            width: 100%; cursor: pointer; display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-            <img src="https://www.svgrepo.com/show/475656/google-color.svg" style="width:20px; margin-right:10px;"> 
-            Continue with Google
-        </button>
-    </body>
-    </html>
-    """
-    components.html(google_auth_html, height=70)
+                    st.session_state.logged_in = True
+                    st.session_state.user_email = user_email
+                    st.session_state.has_subscription = sub_status
+                    st.success(f"लॉगिन सफल: {user_email}")
+                    time.sleep(0.5)
+                    st.rerun()
+        except Exception as e:
+            st.error(f"गूगल ऑथेंटिकेशन त्रुटि: {e}")
 
 # =====================================================================
-# PAGE 1: STYLISH LOGIN & SIGNUP PAGE (Google & Custom Email for Both)
+# PAGE 1: STYLISH LOGIN & SIGNUP PAGE
 # =====================================================================
 def login_signup_page():
     col_left, col_right = st.columns([1.1, 1.3], gap="large")
@@ -268,9 +268,9 @@ def login_signup_page():
                                 st.error("गलत ईमेल या पासवर्ड!")
 
                 st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or Login with</p>", unsafe_allow_html=True)
-                google_login_button()
+                handle_google_login()
 
-            # 2. SIGN UP TAB (कस्टम ईमेल + गूगल दोनों की सुविधा)
+            # 2. SIGN UP TAB
             with signup_tab:
                 st.subheader("Create a new account")
                 new_email = st.text_input("Email Address", key="s_email", placeholder="name@example.com")
@@ -289,7 +289,7 @@ def login_signup_page():
                                 st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
 
                 st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or Sign Up with</p>", unsafe_allow_html=True)
-                google_login_button()
+                handle_google_login()
 
             # 3. FORGOT PASSWORD TAB
             with forgot_tab:
@@ -309,7 +309,7 @@ def login_signup_page():
                                 st.error("ईमेल भेजने में विफल। कृपया सही ईमेल दर्ज करें।")
 
 # =====================================================================
-# PAGE 2: PRICING / SUBSCRIPTION (Production Ready)
+# PAGE 2: PRICING / SUBSCRIPTION
 # =====================================================================
 def pricing_page():
     st.title("💎 सब्सक्रिप्शन प्लान चुनें")
