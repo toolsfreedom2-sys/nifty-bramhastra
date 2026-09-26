@@ -363,7 +363,6 @@ if st.session_state.user_email == ADMIN_EMAIL:
 
 st.divider()
 expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
-
         if st.button("🚪 Logout", use_container_width=True, key="dash_logout_sb"):
             st.session_state.logged_in = False
             st.session_state.has_subscription = False
