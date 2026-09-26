@@ -778,11 +778,16 @@ def main_trading_dashboard():
     st.dataframe(out_df.style.apply(style_chain, axis=1), use_container_width=True, hide_index=True)
 
 # =====================================================================
-# ROUTER LOGIC
+# SECURE PRODUCTION ROUTER LOGIC
 # =====================================================================
-if not st.session_state.logged_in:
+if not st.session_state.get("logged_in", False):
+    # 1. अगर यूजर लॉग इन नहीं है, तो लॉगिन/साइन-अप पेज दिखाएं
     login_signup_page()
-elif st.session_state.logged_in and not st.session_state.has_subscription:
-    pricing_page()
-elif st.session_state.logged_in and st.session_state.has_subscription:
+
+elif st.session_state.get("user_email") == ADMIN_EMAIL or st.session_state.get("has_subscription", False):
+    # 2. अगर यूजर 'एडमिन' है या उसके पास 'एक्टिव सब्सक्रिप्शन' है, तभी डैशबोर्ड खुलेगा
     main_trading_dashboard()
+
+else:
+    # 3. अगर यूजर लॉग इन है लेकिन सब्सक्रिप्शन नहीं है, तो उसे सिर्फ प्राइसिंग पेज दिखेगा
+    pricing_page()
