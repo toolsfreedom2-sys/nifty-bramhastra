@@ -258,7 +258,7 @@ def login_signup_page():
 
     # Decorative background + branding are rendered with Streamlit's native HTML renderer.
     # Keeping them outside st.markdown(style) prevents raw HTML from ever appearing as text.
-    st.html(r'''
+    st.html(f'''
     <div class="auth-bg">
       <div class="auth-orb orb1"></div><div class="auth-orb orb2"></div>
       <div class="auth-orb orb3"></div><div class="auth-orb orb4"></div>
