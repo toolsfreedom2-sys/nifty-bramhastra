@@ -481,6 +481,12 @@ def login_signup_page():
     # are styled instead, so both panels begin at exactly the same Y position.
     st.markdown("""
     <style>
+    html, body, [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(circle at 8% 12%, rgba(188,228,255,.45), transparent 30%),
+            linear-gradient(135deg, #e8f7ff 0%, #f8fcff 52%, #e9f7ff 100%) !important;
+    }
+    
     .block-container {
         max-width: 1536px !important;
         padding-top: 18px !important;
@@ -700,7 +706,58 @@ def login_signup_page():
         .auth-primary button { min-height:58px !important; font-size:17px !important; }
         .auth-google button { min-height:54px !important; font-size:14px !important; }
     }
-    </style>
+    
+    /* ===== SHARED REFERENCE BACKGROUND FOR BOTH SIDES ===== */
+    .auth-page,
+    [data-testid="stHorizontalBlock"] {
+        background:
+            radial-gradient(circle at 12% 8%, rgba(190,230,255,.58), transparent 27%),
+            radial-gradient(circle at 88% 18%, rgba(218,240,255,.72), transparent 31%),
+            linear-gradient(135deg, #e9f7ff 0%, #f7fcff 48%, #eaf7ff 100%) !important;
+    }
+
+    .auth-page {
+        border: 1px solid #c8e3fb !important;
+        box-shadow: 0 18px 55px rgba(25,118,210,.14) !important;
+    }
+
+    /* Right side receives the same soft environmental background,
+       while its form remains on a clean white inner surface. */
+    .auth-right {
+        background:
+            radial-gradient(circle at 92% 8%, rgba(205,235,255,.65), transparent 28%),
+            linear-gradient(180deg, #f4fbff 0%, #ffffff 35%, #f8fcff 100%) !important;
+        position: relative;
+    }
+
+    .auth-right:before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            radial-gradient(circle at 100% 100%, rgba(214,241,255,.55), transparent 25%),
+            radial-gradient(circle at 0% 0%, rgba(225,244,255,.45), transparent 24%);
+        opacity: .9;
+    }
+
+    .auth-right-inner {
+        position: relative;
+        z-index: 2;
+        background: rgba(255,255,255,.92);
+        border-radius: 22px;
+        padding: 30px 34px 28px 34px;
+        box-sizing: border-box;
+        min-height: 100%;
+        box-shadow: 0 4px 20px rgba(55,125,190,.055);
+    }
+
+    /* Keep the right panel visually balanced with the illustration side. */
+    .auth-tabs {
+        box-shadow: 0 4px 14px rgba(37,116,203,.06);
+    }
+
+</style>
     """, unsafe_allow_html=True)
 
     left, right = st.columns([1,1], gap=None)
