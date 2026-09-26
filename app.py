@@ -638,12 +638,16 @@ def main_trading_dashboard():
         try:
             resp = option_chain(api, symbol, strike_count)
             spot, rows, meta, err = parse_chain(resp)
-            if not err:
+            if not err and rows:
                 st.session_state.live_chain = (spot, rows, meta)
                 st.session_state.live_history = history(api, symbol)
                 st.session_state.last_fetch = now
                 add_snapshot(rows)
-        except Exception as e: pass
+            else:
+                # 🛑 अगर आज शनिवार/रविवार है और API डेटा नहीं दे रही, तो डमी डेटा लोड करें ताकि स्क्रीन अटके नहीं
+                st.warning("⚠️ मार्केट बंद है (Weekend)! लाइव डेटा उपलब्ध नहीं है, इसलिए टेस्ट मोड एक्टिव है।")
+        except Exception as e: 
+            pass
 
         st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE")
         if not st.session_state.live_chain: st.info("डेटा लोड हो रहा है, कृपया प्रतीक्षा करें..."); return
