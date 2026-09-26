@@ -32,7 +32,7 @@ APP_DIR = Path.home() / ".fyers_streamlit_nifty"
 APP_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = APP_DIR / "token.json"
 
-REDIRECT_URI = "http://localhost:8501/"
+REDIRECT_URI = "https://nifty-bramhastra.streamlit.app/"
 STATE = "nifty_oi_brahmastra"
 
 # =====================================================================
