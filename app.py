@@ -343,7 +343,7 @@ def main_trading_dashboard():
                     st.rerun()
 
         st.divider()
-        expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
+        expiry_date = st.text_input("एक्सपायरी दिनाँक", value="24OCT")
 
     access_token = saved_token(FYERS_APP_ID)
     if not access_token:
