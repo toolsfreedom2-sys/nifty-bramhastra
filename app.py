@@ -630,7 +630,6 @@ def main_trading_dashboard():
             
     st.divider()
 
-    # इसके बाद आपका नीचे का पुराना डेटा फ़ेच करने वाला कोड वैसे ही रहेगा:
     now = time.time()
     if now - st.session_state.last_fetch >= 0.9:
         try:
