@@ -727,7 +727,7 @@ def main_trading_dashboard():
     if alert_html: st.markdown(alert_html, unsafe_allow_html=True)
 
     a, b, c, d, e, f = st.columns(6)
-        a.metric("NIFTY Spot", fmt_price(spot))
+    a.metric("NIFTY Spot", fmt_price(spot))
     b.metric("CALL OI", fmt_num(meta["call_oi"]))
     c.metric("PUT OI", fmt_num(meta["put_oi"]))
     d.metric(
