@@ -206,9 +206,12 @@ def login_signup_page():
 # =====================================================================
 # PAGE 2: PRICING / SUBSCRIPTION
 # =====================================================================
+# =====================================================================
+# PAGE 2: PRICING / SUBSCRIPTION (Production Ready - No Dummy Bypass)
+# =====================================================================
 def pricing_page():
     st.title("💎 सब्सक्रिप्शन प्लान चुनें")
-    st.write(f"Welcome, **{st.session_state.user_email}**! सॉफ्टवेयर इस्तेमाल करने के लिए एक्टिव प्लान होना जरुरी है:")
+    st.write(f"नमस्ते, **{st.session_state.user_email}**! सॉफ्टवेयर का उपयोग जारी रखने के लिए कृपया नीचे दिए गए प्लान का भुगतान करें:")
     st.divider()
     
     col1, col2 = st.columns(2)
@@ -216,25 +219,20 @@ def pricing_page():
         st.markdown("### 🥉 Monthly Plan")
         st.markdown("<h2>₹499 / month</h2>", unsafe_allow_html=True)
         st.write("✔️ Live Option Chain\n✔️ Advanced Proximity Alerts\n✔️ 15/30/60m OI Shift Data\n✔️ Delta & Theta Analysis")
-        st.link_button("👉 Pay ₹499 (Monthly)", "https://rzp.io/rzp/DOV54Zg", use_container_width=True)
-        st.caption("पेमेंट करने के बाद नीचे Verify बटन दबाएं:")
-        if st.button("✅ मैंने पेमेंट कर दिया है (Verify)", use_container_width=True, key="verify_monthly"):
-            with st.spinner("डेटाबेस अपडेट हो रहा है..."):
-                update_subscription_in_db(st.session_state.user_email, "Monthly", 30)
-                st.session_state.has_subscription = True
-                time.sleep(1)
-                st.success("Verification Successful! आपको 30 दिन का एक्सेस मिल गया है.")
-                time.sleep(1)
-                st.rerun()
+        
+        # Razorpay Payment Link
+        st.link_button("👉 Pay ₹499 (Razorpay)", "https://rzp.io/rzp/DOV54Zg", use_container_width=True)
+        
+        st.info("💡 **नोट:** पेमेंट करने के बाद, आपका रजिस्टर्ड ईमेल आईडी हमें व्हाट्सएप या मेल पर भेजें। एडमिन द्वारा आपका अकाउंट 10 से 15 मिनट के भीतर एक्टिवेट कर दिया जाएगा।")
             
     with col2:
         st.markdown("### 🥇 Yearly Plan")
         st.markdown("<h2>₹4999 / year</h2>", unsafe_allow_html=True)
-        st.write("✔️ All Monthly Features\n✔️ 2 Months Free (Save ₹989)\n✔️ Priority Email Support\n✔️ VIP Updates")
+        st.write("✔️ All Monthly Features\n✔️ 2 Months Free (Save ₹989)\n✔️ Priority Support\n✔️ VIP Updates")
         st.button("Pay ₹4999 (Coming Soon)", disabled=True, use_container_width=True)
 
     st.divider()
-    if st.button("🚪 Logout"):
+    if st.button("🚪 Logout", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.has_subscription = False
         st.rerun()
