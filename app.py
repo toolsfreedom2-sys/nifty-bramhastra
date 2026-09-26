@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-NIFTY OI BRAHMĀSTRA (FINAL SAAS VERSION WITH EXPIRY LOGIC)
-Python 3.12 + Streamlit + FYERS API v3
+NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION)
+Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google Auth
 """
 
 import json
@@ -16,6 +16,7 @@ from collections import deque
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 try:
     from fyers_apiv3 import fyersModel
@@ -25,7 +26,7 @@ except Exception as exc:
     FYERS_IMPORT_ERROR = str(exc)
 
 # ---------------------------------------------------------------------
-# CONFIG
+# CONFIG & PAGE SETUP
 # ---------------------------------------------------------------------
 st.set_page_config(page_title="NIFTY OI Brahmastra", page_icon="📊", layout="wide")
 
@@ -83,6 +84,12 @@ def sign_up_with_email_and_password(email, password):
 def sign_in_with_email_and_password(email, password):
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
+    r = requests.post(url, json=payload)
+    return r.json()
+
+def send_password_reset_email(email):
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}"
+    payload = {"requestType": "PASSWORD_RESET", "email": email}
     r = requests.post(url, json=payload)
     return r.json()
 
@@ -145,6 +152,7 @@ st.markdown("""
 .muted {font-size:12px;color:#9ca3af}
 .blinking-alert { padding: 15px; font-size: 20px; font-weight: bold; text-align: center; border-radius: 10px; border: 3px solid; animation: blinker 1.5s linear infinite; margin-bottom: 20px; }
 @keyframes blinker { 50% { opacity: 0.6; } }
+.brand-title { font-size: 38px; font-weight: 800; color: #1e3a8a; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -159,44 +167,59 @@ if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 
 # =====================================================================
-# PAGE 1: LOGIN & SIGNUP
+# GOOGLE LOGIN COMPONENT
 # =====================================================================
-# =====================================================================
-# FIREBASE PASSWORD RESET (FORGOT PASSWORD) API
-# =====================================================================
-def send_password_reset_email(email):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={FIREBASE_API_KEY}"
-    payload = {"requestType": "PASSWORD_RESET", "email": email}
-    r = requests.post(url, json=payload)
-    return r.json()
+def google_login_button():
+    google_auth_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script type="module">
+            import {{ initializeApp }} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+            import {{ getAuth, GoogleAuthProvider, signInWithPopup }} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+            const firebaseConfig = {{
+                apiKey: "{FIREBASE_API_KEY}",
+                authDomain: "{PROJECT_ID}.firebaseapp.com",
+                projectId: "{PROJECT_ID}"
+            }};
+
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const provider = new GoogleAuthProvider();
+
+            window.signInWithGoogle = function() {{
+                signInWithPopup(auth, provider)
+                .then((result) => {{
+                    const user = result.user;
+                    window.parent.postMessage({{
+                        type: 'google_login_success',
+                        email: user.email
+                    }}, "*");
+                }}).catch((error) => {{
+                    console.error(error);
+                }});
+            }}
+        </script>
+    </head>
+    <body>
+        <button onclick="signInWithGoogle()" style="
+            background-color: white; color: #333; border: 1px solid #cbd5e1;
+            padding: 10px 20px; border-radius: 10px; font-size: 16px; font-weight: 600;
+            width: 100%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <img src="https://www.svgrepo.com/show/475656/google-color.svg" style="width:20px; margin-right:10px;"> 
+            Continue with Google
+        </button>
+    </body>
+    </html>
+    """
+    components.html(google_auth_html, height=60)
 
 # =====================================================================
-# PREMIUM STYLISH LOGIN & SIGNUP PAGE (Matching the design)
+# PAGE 1: STYLISH LOGIN & SIGNUP PAGE
 # =====================================================================
 def login_signup_page():
-    # कस्टम मॉडर्न CSS स्टाइलिंग
-    st.markdown("""
-    <style>
-    .login-card {
-        background: white;
-        padding: 40px;
-        border-radius: 20px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-    }
-    .brand-title {
-        font-size: 38px;
-        font-weight: 800;
-        color: #1e3a8a;
-    }
-    .stButton>button {
-        border-radius: 10px;
-        font-weight: 600;
-        height: 45px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # दो कॉलम में लेआउट (बिल्कुल इमेज की तरह)
     col_left, col_right = st.columns([1.1, 1.3], gap="large")
 
     with col_left:
@@ -204,7 +227,6 @@ def login_signup_page():
         st.markdown("<h1 class='brand-title'>Welcome Back!</h1>", unsafe_allow_html=True)
         st.markdown("<p style='color: #64748b; font-size: 16px;'>अपने अकाउंट में लॉगिन करें और NIFTY OI Brahmāstra का आनंद लें।</p>", unsafe_allow_html=True)
         
-        # फीचर्स आइकॉन और टेक्स्ट
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown("🛡️ **Secure**<br><span style='font-size:12px;color:gray;'>डेटा सुरक्षित है</span>", unsafe_allow_html=True)
@@ -215,10 +237,9 @@ def login_signup_page():
 
     with col_right:
         with st.container():
-            # टैब: Login और Sign Up
             auth_tab, signup_tab, forgot_tab = st.tabs(["🔑 Login", "📝 Sign Up", "🔄 Forgot Password"])
 
-            # --- 1. LOGIN TAB ---
+            # 1. LOGIN TAB
             with auth_tab:
                 st.subheader("Login to your account")
                 login_email = st.text_input("Email Address", key="l_email", placeholder="name@example.com")
@@ -242,13 +263,9 @@ def login_signup_page():
                                 st.error("गलत ईमेल या पासवर्ड!")
 
                 st.markdown("<p style='text-align: center; color: gray; margin: 15px 0;'>Or continue with</p>", unsafe_allow_html=True)
-                
-                # Google Login Button Simulation (Firebase Google Auth Integration)
-                if st.button("🌐 Continue with Google", use_container_width=True):
-                    st.info("गूगल ऑथेंटिकेशन सेटअप के लिए Firebase कंसोल में Google Sign-In एनेबल होना चाहिए।")
+                google_login_button()
 
-            # --- 2. SIGN UP TAB ---
-            # --- 2. SIGN UP TAB ---
+            # 2. SIGN UP TAB
             with signup_tab:
                 st.subheader("Create a new account")
                 new_email = st.text_input("Email Address", key="s_email", placeholder="name@example.com")
@@ -266,7 +283,7 @@ def login_signup_page():
                             else:
                                 st.error("यह ईमेल पहले से रजिस्टर्ड है या अमान्य है!")
 
-            # --- 3. FORGOT PASSWORD TAB ---
+            # 3. FORGOT PASSWORD TAB
             with forgot_tab:
                 st.subheader("Reset Password")
                 st.write("अपना रजिस्टर्ड ईमेल दर्ज करें, हम आपको पासवर्ड रीसेट लिंक भेजेंगे।")
@@ -284,10 +301,7 @@ def login_signup_page():
                                 st.error("ईमेल भेजने में विफल। कृपया सही ईमेल दर्ज करें।")
 
 # =====================================================================
-# PAGE 2: PRICING / SUBSCRIPTION
-# =====================================================================
-# =====================================================================
-# PAGE 2: PRICING / SUBSCRIPTION (Production Ready - No Dummy Bypass)
+# PAGE 2: PRICING / SUBSCRIPTION (Production Ready)
 # =====================================================================
 def pricing_page():
     st.title("💎 सब्सक्रिप्शन प्लान चुनें")
@@ -299,11 +313,8 @@ def pricing_page():
         st.markdown("### 🥉 Monthly Plan")
         st.markdown("<h2>₹499 / month</h2>", unsafe_allow_html=True)
         st.write("✔️ Live Option Chain\n✔️ Advanced Proximity Alerts\n✔️ 15/30/60m OI Shift Data\n✔️ Delta & Theta Analysis")
-        
-        # Razorpay Payment Link
         st.link_button("👉 Pay ₹499 (Razorpay)", "https://rzp.io/rzp/DOV54Zg", use_container_width=True)
-        
-        st.info("💡 **नोट:** पेमेंट करने के बाद, आपका रजिस्टर्ड ईमेल आईडी हमें व्हाट्सएप या मेल पर भेजें। एडमिन द्वारा आपका अकाउंट 10 से 15 मिनट के भीतर एक्टिवेट कर दिया जाएगा।")
+        st.info("💡 **नोट:** पेमेंट करने के बाद, अपनी रजिस्टर्ड ईमेल आईडी एडमिन को भेजें। आपका अकाउंट 10 से 15 मिनट के भीतर एक्टिवेट कर दिया जाएगा।")
             
     with col2:
         st.markdown("### 🥇 Yearly Plan")
@@ -421,7 +432,7 @@ def main_trading_dashboard():
                     st.rerun()
 
         st.divider()
-        expiry_date = st.text_input("एक्सपायरी दिनाँक", value="24OCT")
+        expiry_date = st.text_input("एक्सपायरी (उदा. 24OCT)", value="24OCT")
 
     access_token = saved_token(FYERS_APP_ID)
     if not access_token:
