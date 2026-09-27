@@ -365,7 +365,6 @@ def login_signup_page():
     }
     </style>
     """, unsafe_allow_html=True)
-    """Modern colorful authentication page for NIFTY OI Brahmāstra."""
     st.markdown(r'''<style>
     .stApp{background:radial-gradient(circle at 8% 12%,rgba(255,107,168,.30),transparent 25%),radial-gradient(circle at 92% 14%,rgba(86,204,242,.30),transparent 26%),radial-gradient(circle at 18% 92%,rgba(123,97,255,.28),transparent 28%),radial-gradient(circle at 88% 88%,rgba(255,180,76,.25),transparent 25%),linear-gradient(135deg,#111936 0%,#1b1550 38%,#162d68 68%,#0c1837 100%) !important;min-height:100vh!important}
     #MainMenu,header,footer,.stDeployButton,[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stStatusWidget"]{display:none!important}
