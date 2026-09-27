@@ -859,6 +859,7 @@ def main_trading_dashboard():
             "oi_pct": oi_pct,
             "oich": oich,
             "volume_stable": volume_stable,
+            "checks": checks,
         }
 
     def _snapshot_for_minutes(minutes):
@@ -912,75 +913,115 @@ def main_trading_dashboard():
             unsafe_allow_html=True
         )
 
+    def _trend_from_score(score):
+        try: score = float(score)
+        except Exception: score = 0.0
+        if score >= 0.18: return "BULLISH"
+        if score <= -0.18: return "BEARISH"
+        return "SIDEWAYS"
+
+    def _score_strength(score):
+        try: score = float(score)
+        except Exception: score = 0.0
+        if score >= 0.30: return "STRONG BULLISH"
+        if score >= 0.18: return "BULLISH"
+        if score <= -0.30: return "STRONG BEARISH"
+        if score <= -0.18: return "BEARISH"
+        return "SIDEWAYS / MIXED"
+
+    def _direction_arrows(details):
+        parts = []
+        for mins in (15, 30, 60):
+            d = details.get(mins, {}) if isinstance(details, dict) else {}
+            if not d.get("ready"):
+                arrow, cls = "→", "side"
+            else:
+                tr = _trend_from_score(d.get("score", 0))
+                if tr == "BULLISH": arrow, cls = "↑", "up"
+                elif tr == "BEARISH": arrow, cls = "↓", "down"
+                else: arrow, cls = "→", "side"
+            parts.append(f"<span class='tf-arrow {cls}'>{mins}m {arrow}</span>")
+        return " <span class='tf-sep'>•</span> ".join(parts)
+
+    def _score_explanation(minutes, score, detail, all_details=None):
+        trend = _trend_from_score(score)
+        strength = _score_strength(score)
+        arrows = _direction_arrows(all_details or {minutes: detail})
+        trend_cls = "up" if trend == "BULLISH" else "down" if trend == "BEARISH" else "side"
+        if not detail.get("ready"):
+            return f"""<div class="popup-title">{minutes} MINUTE MARKET TREND</div>
+                <div class="popup-trend side">⏳ WAIT / DATA NOT READY</div>
+                <div class="popup-score">Score: {score:+.3f}</div>
+                <div class="popup-section"><b>Score Details</b><br>इस timeframe के लिए पर्याप्त historical data अभी उपलब्ध नहीं है।</div>
+                <div class="popup-section"><b>Trend Indicator</b><br>{arrows}</div>"""
+        return f"""<div class="popup-title">{minutes} MINUTE MARKET TREND</div>
+            <div class="popup-trend {trend_cls}">{trend}</div>
+            <div class="popup-score">Score: {score:+.3f}</div>
+            <div class="popup-strength">Strength: <b>{strength}</b></div>
+            <div class="popup-section"><b>SCORE DETAILS</b><br>
+            CE OI Shift: {detail.get('ce_oi', 0):+,.0f}<br>
+            PE OI Shift: {detail.get('pe_oi', 0):+,.0f}<br>
+            CE OI Change Shift: {detail.get('ce_oich', 0):+,.0f}<br>
+            PE OI Change Shift: {detail.get('pe_oich', 0):+,.0f}</div>
+            <div class="popup-section"><b>TREND INDICATOR</b><br>{arrows}</div>"""
+
     def _pcr_explanation(pcr):
-        if pcr is None:
-            return "PCR data उपलब्ध नहीं है।"
-        if pcr < 0.70:
-            bias = "CALL OI की तुलना में PUT OI काफी कम है — option-chain में bearish/resistance bias दिख रहा है।"; zone = "बहुत कम PCR"
-        elif pcr < 1.00:
-            bias = "CALL OI, PUT OI से अधिक है — हल्का bearish/resistance bias माना जा सकता है, लेकिन यह अकेला trend confirmation नहीं है।"; zone = "CALL-heavy zone"
-        elif pcr <= 1.30:
-            bias = "PUT OI, CALL OI के बराबर या अधिक है — support-side bias दिख सकता है; price और OI-change से confirmation जरूरी है।"; zone = "Balanced / mild PUT-heavy"
-        else:
-            bias = "PUT OI काफी अधिक है — support-side bias मजबूत दिख सकता है, लेकिन बहुत ऊंचा PCR crowded positioning/contrarian risk भी दिखा सकता है।"; zone = "High PUT-heavy zone"
-        return f'''<b>PCR = {pcr:.2f}</b><br><b>Zone:</b> {zone}<br>{bias}<br><br>
-            <b>कैसे पढ़ें:</b> PCR = Total PUT OI ÷ Total CALL OI।<br>
-            <b>क्या देखें:</b> PCR के साथ NIFTY price, OI Change और 15/30/60m confirmation को मिलाकर देखें।<br>
-            <b>सावधानी:</b> PCR अकेले BUY/SELL signal नहीं है।'''
+        if pcr is None: return "PCR data उपलब्ध नहीं है।"
+        if pcr < 0.90: trend = "BEARISH"
+        elif pcr <= 1.10: trend = "NEUTRAL"
+        elif pcr <= 1.40: trend = "BULLISH"
+        else: trend = "STRONG BULLISH"
+        trend_cls = "up" if "BULLISH" in trend else "down" if trend == "BEARISH" else "side"
+        return f"""<div class="popup-title">PCR TREND</div>
+            <div class="popup-trend {trend_cls}">{trend}</div>
+            <div class="popup-score">Current PCR: {pcr:.2f}</div>
+            <div class="popup-section"><b>PCR RANGE DETAILS</b><br>
+            &lt; 0.90 → BEARISH<br>
+            0.90 – 1.10 → NEUTRAL<br>
+            1.10 – 1.40 → BULLISH<br>
+            &gt; 1.40 → STRONG BULLISH</div>
+            <div class="popup-section"><b>Formula:</b> Total PUT OI ÷ Total CALL OI</div>"""
 
     def _max_pain_explanation(pain, spot):
         if pain is None or spot is None: return "Max Pain data उपलब्ध नहीं है।"
-        dist = float(spot) - float(pain); pct = (abs(dist) / float(spot) * 100.0) if spot else 0.0
-        if abs(dist) < 25: relation = "Spot Max Pain के बहुत पास है; expiry-related pinning/reference zone के रूप में देखा जा सकता है।"
-        elif dist > 0: relation = f"Spot Max Pain से लगभग {abs(dist):.0f} points ऊपर है; Max Pain नीचे reference zone है।"
-        else: relation = f"Spot Max Pain से लगभग {abs(dist):.0f} points नीचे है; Max Pain ऊपर reference zone है।"
-        return f'''<b>Max Pain = {pain:.0f}</b><br>{relation}<br><b>Distance:</b> {abs(dist):.0f} points ({pct:.2f}%)<br><br>
-            <b>इसका मतलब:</b> मौजूदा option OI के आधार पर वह expiry strike जहां aggregate intrinsic-payout calculation न्यूनतम होती है।<br>
-            <b>क्या देखें:</b> Spot और Max Pain का gap, expiry के पास price behavior और major Call/Put OI walls।<br>
-            <b>सावधानी:</b> Max Pain को guaranteed target या future price prediction न मानें।'''
+        dist = float(spot) - float(pain)
+        relation = "Spot Max Pain के ऊपर है" if dist > 0 else ("Spot Max Pain के नीचे है" if dist < 0 else "Spot और Max Pain समान हैं")
+        return f"""<div class="popup-title">MAX PAIN</div>
+            <div class="popup-score">Max Pain Price: {pain:.0f}</div>
+            <div class="popup-section">Spot Price: {spot:.2f}<br><b>Distance: {abs(dist):.0f} Points</b><br>{relation}</div>"""
 
     def _vix_explanation(vix, change_pct):
         if vix is None: return "India VIX data उपलब्ध नहीं है।"
-        if vix < 15: level = "कम implied volatility zone"
-        elif vix < 20: level = "मध्यम volatility zone"
-        elif vix < 25: level = "उच्च volatility zone"
-        else: level = "बहुत ऊंचा volatility zone"
-        if change_pct > 3: move = "VIX तेजी से बढ़ रहा है — हालिया expected volatility बढ़ रही है।"
-        elif change_pct < -3: move = "VIX घट रहा है — हालिया expected volatility कम हो रही है।"
-        else: move = "VIX में बड़ा बदलाव नहीं है — volatility expectation अपेक्षाकृत स्थिर है।"
-        return f'''<b>India VIX = {vix:.2f}</b><br><b>Level:</b> {level}<br>{move}<br><br>
-            <b>इसका मतलब:</b> India VIX NIFTY options के prices से अगले 30 calendar days की expected volatility को दर्शाता है।<br>
-            <b>क्या देखें:</b> VIX ↑ के साथ option premiums/price swings बढ़ सकते हैं; VIX ↓ में volatility pressure घट सकता है।<br>
-            <b>सावधानी:</b> VIX direction यह नहीं बताती कि NIFTY निश्चित रूप से ऊपर जाएगा या नीचे।'''
-
-    def _score_explanation(minutes, score, detail):
-        if not detail.get("ready"):
-            return f'''<b>{minutes} मिनट:</b> historical data पर्याप्त नहीं है।<br><b>मतलब:</b> इस timeframe का score अभी reliable confirmation नहीं देता।<br><b>क्या देखें:</b> कम से कम {minutes}m history उपलब्ध होने के बाद score को price + OI change के साथ पढ़ें।'''
-        if score >= 0.18: bias = "Bullish-side bias"
-        elif score <= -0.18: bias = "Bearish-side bias"
-        else: bias = "Sideways / mixed bias"
-        return f'''<b>{minutes}m Score = {score:+.3f}</b><br><b>Interpretation:</b> {bias}<br>
-            <b>Score कैसे बनता है:</b> Put-vs-Call OI shift और OI-change shift को combine किया गया है।<br>
-            <b>Data:</b> CE OI shift {detail.get("ce_oi", 0):+.0f} • PE OI shift {detail.get("pe_oi", 0):+.0f}<br><b>OI Change shift:</b> CE {detail.get("ce_oich", 0):+.0f} • PE {detail.get("pe_oich", 0):+.0f}<br><br>
-            <b>क्या देखें:</b> 15m = short-term, 30m = intermediate, 60m = broader intraday context। तीनों एक दिशा में हों तो confirmation मजबूत समझा जा सकता है; अलग हों तो WAIT/MIXED context रखें।<br>
-            <b>सावधानी:</b> score rule-based indicator है, guaranteed prediction नहीं।'''
+        if vix < 15: level = "LOW VOLATILITY"
+        elif vix < 20: level = "MODERATE VOLATILITY"
+        elif vix < 25: level = "HIGH VOLATILITY"
+        else: level = "VERY HIGH VOLATILITY"
+        return f"""<div class="popup-title">INDIA VIX</div>
+            <div class="popup-score">VIX: {vix:.2f}</div>
+            <div class="popup-trend side">{level}</div>
+            <div class="popup-section"><b>VIX RANGE DETAILS</b><br>
+            &lt; 15 → LOW VOLATILITY<br>
+            15 – 20 → MODERATE VOLATILITY<br>
+            20 – 25 → HIGH VOLATILITY<br>
+            ≥ 25 → VERY HIGH VOLATILITY</div>
+            <div class="popup-section">VIX Change: {change_pct:+.2f}%</div>"""
 
     def _four_factor_explanation(side, sig):
         if not sig: return f"{side} data उपलब्ध नहीं है।"
-        state = sig.get("state", "LOADING"); score = int(sig.get("score", 0)); price = float(sig.get("price_pct", 0)); vol = float(sig.get("volume_pct", 0)); oi = float(sig.get("oi_pct", 0)); oich = float(sig.get("oich", 0))
-        meanings = {
-            "LONG BUILDUP": "Price ↑ + Volume ↑ + OI ↑ + session OI change positive: fresh long-side participation का pattern।",
-            "SHORT BUILDUP": "Price ↓ + Volume ↑ + OI ↑ + session OI change positive: fresh short-side participation का pattern।",
-            "SHORT COVERING": "Price ↑ + OI ↓ + OI change negative: shorts exit होने का pattern।",
-            "LONG UNWINDING": "Price ↓ + OI ↓ + OI change negative: longs exit होने का pattern।",
-            "MIXED / NO CONFIRMATION": "चारों factors एक ही दिशा में नहीं हैं; इसलिए साफ buildup/covering confirmation नहीं मिला।"
-        }
-        return f'''<b>{side}: {state} ({score}/4)</b><br>{meanings.get(state, "Data अभी loading है।")}<br><br>
-            <b>Price:</b> {price:+.2f}% &nbsp; <b>Volume:</b> {vol:+.1f}%<br>
-            <b>OI:</b> {oi:+.2f}% &nbsp; <b>OI Change:</b> {oich:+.0f}<br><br>
-            <b>{score}/4 का मतलब:</b> चार checks में {score} condition match हुई। 1/4 का अर्थ केवल एक condition match हुई — यह confirmation नहीं है।<br>
-            <b>क्या देखें:</b> अगले snapshot में price, volume, OI और OI-change का alignment तथा 15/30/60m context।<br>
-            <b>क्या करें:</b> केवल 1/4 या MIXED पर तुरंत trade signal न मानें; independent confirmation का इंतजार करें।'''
+        score = int(sig.get("score", 0))
+        checks = sig.get("checks", {})
+        def mark(name): return "🟢 ✓" if checks.get(name, False) else "🔴 ✕"
+        return f"""<div class="popup-title">ATM {side} — 4 CONDITION CHECK</div>
+            <div class="popup-section"><b>PRICE</b> {mark('price')}<br>
+            <b>VOLUME</b> {mark('volume')}<br>
+            <b>OI</b> {mark('oi')}<br>
+            <b>OI CHANGE</b> {mark('oich')}</div>
+            <div class="popup-score">Matched: {score}/4</div>
+            <div class="popup-section"><b>State:</b> {sig.get('state','LOADING')}<br>
+            Price: {float(sig.get('price_pct',0)):+.2f}%<br>
+            Volume: {float(sig.get('volume_pct',0)):+.1f}%<br>
+            OI: {float(sig.get('oi_pct',0)):+.2f}%<br>
+            OI Change: {float(sig.get('oich',0)):+,.0f}</div>"""
 
     st.markdown(r'''<style>
     /* ===== HOVER POPUP OVERLAY FIX =====
@@ -1055,6 +1096,16 @@ def main_trading_dashboard():
         transform:translateY(0);
     }
     .metric-hover-popup b{color:#fff;}
+    .popup-title{font-size:13px;font-weight:900;letter-spacing:.03em;margin-bottom:5px;}
+    .popup-score{font-size:18px;font-weight:900;margin:3px 0;}
+    .popup-strength{font-size:12px;margin-bottom:7px;}
+    .popup-section{border-top:1px solid rgba(255,255,255,.12);padding-top:8px;margin-top:8px;}
+    .popup-trend{font-size:17px;font-weight:900;margin:2px 0;}
+    .popup-trend.up,.tf-arrow.up{color:#4ade80;}
+    .popup-trend.down,.tf-arrow.down{color:#f87171;}
+    .popup-trend.side,.tf-arrow.side{color:#facc15;}
+    .tf-arrow{font-weight:900;font-size:13px;white-space:nowrap;}
+    .tf-sep{color:#94a3b8;}
     .ff-hover{min-height:96px;}
     /* On short screens keep the popup usable and away from the browser edge. */
     @media (max-height:700px){
@@ -1665,11 +1716,11 @@ def main_trading_dashboard():
     # METRICS ROW — hover explains exactly what each number means
     a, b, c, d, e, f = st.columns(6)
     with a:
-        _hover_card("NIFTY Spot", fmt_price(spot), "<b>Current NIFTY spot:</b> option-chain और trend calculations का underlying reference price।<br><b>क्या देखें:</b> Spot के साथ PCR, Max Pain, VIX और OI shifts को compare करें।", "nifty-spot")
+        _hover_card("NIFTY Spot", fmt_price(spot), f"<div class='popup-title'>{index_name}</div><div class='popup-score'>Spot Price: {fmt_price(spot)}</div>", "nifty-spot")
     with b:
-        _hover_card("CALL OI", fmt_num(meta["call_oi"]), "<b>Total CALL Open Interest:</b> खुले हुए Call option contracts का कुल OI।<br><b>मतलब:</b> बड़े Call OI zones resistance/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "call-oi")
+        _hover_card("CALL OI", fmt_num(meta["call_oi"]), f"<div class='popup-title'>CALL OI</div><div class='popup-score'>Total OI: {fmt_num(meta['call_oi'])}</div><div class='popup-section'>Resistance Price: <b>{fmt_price(resistance)}</b></div>", "call-oi")
     with c:
-        _hover_card("PUT OI", fmt_num(meta["put_oi"]), "<b>Total PUT Open Interest:</b> खुले हुए Put option contracts का कुल OI।<br><b>मतलब:</b> बड़े Put OI zones support/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "put-oi")
+        _hover_card("PUT OI", fmt_num(meta["put_oi"]), f"<div class='popup-title'>PUT OI</div><div class='popup-score'>Total OI: {fmt_num(meta['put_oi'])}</div><div class='popup-section'>Support Price: <b>{fmt_price(support)}</b></div>", "put-oi")
     with d:
         pcr_value = (meta['put_oi']/meta['call_oi']) if meta['call_oi'] else 0
         _hover_card("PCR", f"{pcr_value:.2f}", _pcr_explanation(pcr_value), "pcr")
@@ -1686,9 +1737,9 @@ def main_trading_dashboard():
         d_val = details[mins]
         with col:
             if d_val["ready"]:
-                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val), f"score-{mins}m")
+                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val, details), f"score-{mins}m")
             else:
-                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val), f"score-{mins}m")
+                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val, details), f"score-{mins}m")
 
     x1, x2, x3, x4 = st.columns(4)
     x1.markdown(f"<div class='box entry'><b>ENTRY LEVEL</b><div class='big'>{fmt_price(entry)}</div><div class='muted'>{mode}</div></div>", unsafe_allow_html=True)
