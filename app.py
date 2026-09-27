@@ -1010,11 +1010,14 @@ def main_trading_dashboard():
                 f"<b>Raw Details:</b><br>Price: {price:+.2f}%<br>Volume: {vol:+.1f}%<br>OI: {oi:+.2f}%<br>OI Change: {oich:+.0f}")
 
     st.markdown(r'''<style>
-    /* FINAL POPUP OVERLAY FIX
-       The popup is viewport-fixed so Streamlit row/column/card stacking
-       cannot clip the detail box. */
+    /* FINAL POPUP FIX
+       IMPORTANT: the detail panel stays IN FLOW.
+       It expands the Streamlit column/card itself instead of floating
+       outside a parent container. This prevents clipping by tabs,
+       columns, vertical blocks and viewport boundaries. */
+
     .metric-hover-wrap{
-        position:relative;
+        position:relative !important;
         width:100%;
         min-height:78px;
         border:1px solid rgba(100,116,139,.18);
@@ -1024,11 +1027,17 @@ def main_trading_dashboard():
         box-sizing:border-box;
         cursor:help;
         margin-bottom:8px;
-        z-index:2147483000 !important;
+        z-index:50 !important;
         overflow:visible !important;
+        height:auto !important;
+        max-height:none !important;
     }
 
-    .metric-hover-main{position:relative;z-index:2;}
+    .metric-hover-main{
+        position:relative;
+        z-index:2;
+    }
+
     .metric-hover-label{
         font-size:12px;
         font-weight:700;
@@ -1036,6 +1045,7 @@ def main_trading_dashboard():
         text-transform:uppercase;
         letter-spacing:.02em;
     }
+
     .metric-hover-value{
         font-size:22px;
         font-weight:850;
@@ -1043,86 +1053,99 @@ def main_trading_dashboard():
         margin-top:2px;
     }
 
-    /* IMPORTANT: viewport overlay — NOT absolute inside the Streamlit card */
+    /* CLOSED: occupies no extra space */
     .metric-hover-popup{
-        position:fixed !important;
-        left:50% !important;
+        position:relative !important;
+        left:auto !important;
         right:auto !important;
         top:auto !important;
-        bottom:24px !important;
-
-        width:min(620px,calc(100vw - 36px)) !important;
-        max-width:calc(100vw - 36px) !important;
-        min-height:120px;
-        max-height:min(420px,calc(100vh - 48px));
-
+        bottom:auto !important;
+        width:100% !important;
+        max-width:100% !important;
         box-sizing:border-box;
-        overflow-y:auto !important;
-        overflow-x:hidden !important;
 
-        padding:18px 20px !important;
-        border-radius:16px !important;
+        margin:0 !important;
+        padding:0 !important;
+
+        max-height:0 !important;
+        overflow:hidden !important;
+
+        border:1px solid transparent !important;
+        border-radius:14px !important;
         background:#0f172a !important;
         color:#f8fafc !important;
-        border:1px solid rgba(255,255,255,.18) !important;
-        box-shadow:0 24px 70px rgba(0,0,0,.48) !important;
 
-        font-size:14px !important;
-        line-height:1.7 !important;
+        font-size:13px !important;
+        line-height:1.65 !important;
         word-break:normal;
         overflow-wrap:anywhere;
 
         opacity:0;
         visibility:hidden;
-        transform:translate(-50%,10px);
-        transition:opacity .14s ease,transform .14s ease,visibility .14s ease;
+        transform:none !important;
 
         pointer-events:none;
-        z-index:2147483647 !important;
+        z-index:60 !important;
+
+        transition:
+            max-height .20s ease,
+            opacity .14s ease,
+            padding .14s ease,
+            margin .14s ease,
+            visibility .14s ease;
     }
 
-    .metric-hover-wrap:hover{
-        border-color:rgba(59,130,246,.45);
-        box-shadow:0 7px 20px rgba(15,23,42,.10);
-    }
-
+    /* OPEN: popup becomes part of the card's normal height */
     .metric-hover-wrap:hover .metric-hover-popup{
+        max-height:600px !important;
+        margin:9px 0 0 0 !important;
+        padding:15px 17px !important;
+
+        border-color:rgba(255,255,255,.14) !important;
         opacity:1;
         visibility:visible;
-        transform:translate(-50%,0);
         pointer-events:auto;
     }
 
-    .metric-hover-popup b{color:#fff !important;}
-    .ff-hover{min-height:96px;}
+    .metric-hover-popup b{
+        color:#fff !important;
+    }
 
-    /* Streamlit parents must not create clipping boxes */
+    .ff-hover{
+        min-height:96px;
+    }
+
+    /* Absolutely no clipping/containment on Streamlit layout ancestors */
     div[data-testid="column"],
     div[data-testid="stHorizontalBlock"],
     div[data-testid="stVerticalBlock"],
     div[data-testid="stVerticalBlockBorderWrapper"],
     div[data-testid="stElementContainer"],
-    div[data-testid="stMarkdownContainer"]{
-        overflow:visible !important;
-    }
-
-    /* Keep the dashboard content below the popup overlay */
+    div[data-testid="stMarkdownContainer"],
     div[data-testid="stAppViewContainer"],
     div[data-testid="stAppViewBlockContainer"],
     .block-container{
         overflow:visible !important;
+        clip-path:none !important;
+        mask:none !important;
+        -webkit-mask:none !important;
+        contain:none !important;
+    }
+
+    /* Remove clipping/stacking conditions that can affect descendants */
+    .metric-hover-wrap,
+    .metric-hover-wrap *{
+        clip-path:none !important;
     }
 
     @media (max-width:700px){
         .metric-hover-popup{
-            left:50% !important;
-            bottom:12px !important;
-            width:calc(100vw - 20px) !important;
-            max-width:calc(100vw - 20px) !important;
-            max-height:calc(100vh - 24px);
-            padding:16px !important;
             font-size:13px !important;
-            line-height:1.65 !important;
+            line-height:1.6 !important;
+        }
+
+        .metric-hover-wrap:hover .metric-hover-popup{
+            max-height:70vh !important;
         }
     }
     </style>''',unsafe_allow_html=True)
