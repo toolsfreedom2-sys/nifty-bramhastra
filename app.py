@@ -708,9 +708,16 @@ def main_trading_dashboard():
         return pd.DataFrame(res)
 
     def take_snapshot(rows):
+        # Keep both absolute OI and the exchange/FYERS supplied session OI-change.
+        # The latter is important when only one historical snapshot is available
+        # (for example immediately after a restart or during a closed market).
         return {
             key_for(r["strike"], r["type"]): {
-                "oi": r["oi"], "oich": r["oich"], "ltp": r["ltp"], "volume": r.get("volume", 0)
+                "oi": r["oi"],
+                "oich": r.get("oich", 0),
+                "oichp": r.get("oichp", 0),
+                "ltp": r["ltp"],
+                "volume": r.get("volume", 0)
             } for r in rows
         }
 
@@ -960,7 +967,14 @@ def main_trading_dashboard():
         return start_ts, start_snap, end_ts, end_snap
 
     def _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike):
-        """Build visual data matching the reference: solid OI + outlined/soft OI change."""
+        """Build rows for OI/OI-Change charts.
+
+        Change is calculated from the selected Time Window baseline. If the
+        selected window has no earlier snapshot (common after a fresh restart),
+        the current FYERS ``oich`` value is used instead of showing a misleading
+        zero. This also keeps Show OI Change useful while the app is displaying
+        last-session cached data.
+        """
         records = []
         for _, r in df.iterrows():
             strike = float(r["strike"])
@@ -972,79 +986,85 @@ def main_trading_dashboard():
                 cur = end_snap.get(k, {}) if isinstance(end_snap, dict) else {}
                 base = start_snap.get(k, {}) if isinstance(start_snap, dict) else {}
                 current_oi = float(cur.get("oi", r[oi_col]) or 0)
-                start_oi = float(base.get("oi", current_oi) or 0)
-                change = current_oi - start_oi
+                start_oi = float(base.get("oi", 0) or 0)
+                baseline_exists = bool(base) and start_oi > 0
+                window_change = current_oi - start_oi if baseline_exists else 0.0
+                fyers_oich = float(cur.get("oich", r.get("pe_oich" if typ == "PE" else "ce_oich", 0)) or 0)
+                # Use historical-window delta when available; otherwise retain the
+                # real FYERS session OI-change instead of displaying a fake zero.
+                change = window_change if baseline_exists else fyers_oich
                 records.append({
                     "strike": strike,
                     "Side": side,
                     "Label": label,
                     "OI": current_oi,
-                    "StartOI": start_oi,
+                    "StartOI": start_oi if baseline_exists else max(current_oi - fyers_oich, 0),
                     "Change": change,
                     "ChangeAbs": abs(change),
                     "ATM": abs(strike - atm_strike) < 0.1,
                     "CompactOI": fmt_bar_value(current_oi),
-                    "CompactStart": fmt_bar_value(start_oi),
+                    "CompactStart": fmt_bar_value(start_oi if baseline_exists else max(current_oi - fyers_oich, 0)),
                     "CompactChange": ("+" if change >= 0 else "") + fmt_bar_value(change),
                 })
         return pd.DataFrame(records)
 
     def _oi_video_style_chart(chart_df, spot, title, show_oi_change=True, metric="OI"):
-        """Render reliable Vega-Lite bars for OI or OI Change.
-        Hovering a strike shows combined CALL + PUT information.
+        """Render the two-bar-per-strike visual reliably.
+
+        The chart uses one embedded Vega-Lite dataset for every layer. OI is
+        always current OI; OI Change is the selected-window change (or FYERS
+        session change when no historical baseline exists).
         """
         if chart_df.empty:
             st.info("इस समय OI chart के लिए पर्याप्त strike data उपलब्ध नहीं है।")
             return
 
-        # Make sure numeric fields are truly numeric before sending them to Vega.
         chart_df = chart_df.copy()
         for col in ["strike", "OI", "StartOI", "Change"]:
             chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").fillna(0.0)
+        chart_df["strike_label"] = chart_df["strike"].map(lambda x: f"{x:.0f}")
         chart_df = chart_df.sort_values(["strike", "Side"]).reset_index(drop=True)
 
         combined = []
         for strike, g in chart_df.groupby("strike", sort=True):
-            call = g[g["Side"] == "CALL"]
-            put = g[g["Side"] == "PUT"]
-            c = call.iloc[0] if not call.empty else None
-            q = put.iloc[0] if not put.empty else None
+            c = g[g["Side"] == "CALL"]
+            p = g[g["Side"] == "PUT"]
+            c = c.iloc[0] if not c.empty else None
+            p = p.iloc[0] if not p.empty else None
             combined.append({
+                "strike_label": f"{float(strike):.0f}",
                 "strike": float(strike),
-                "Call OI": float(c["OI"]) if c is not None else 0,
-                "Put OI": float(q["OI"]) if q is not None else 0,
-                "Call Start OI": float(c["StartOI"]) if c is not None else 0,
-                "Put Start OI": float(q["StartOI"]) if q is not None else 0,
-                "Call OI Change": float(c["Change"]) if c is not None else 0,
-                "Put OI Change": float(q["Change"]) if q is not None else 0,
+                "Call OI": float(c["OI"]) if c is not None else 0.0,
+                "Put OI": float(p["OI"]) if p is not None else 0.0,
+                "Call Start OI": float(c["StartOI"]) if c is not None else 0.0,
+                "Put Start OI": float(p["StartOI"]) if p is not None else 0.0,
+                "Call OI Change": float(c["Change"]) if c is not None else 0.0,
+                "Put OI Change": float(p["Change"]) if p is not None else 0.0,
                 "Call OI Text": c["CompactOI"] if c is not None else "0",
-                "Put OI Text": q["CompactOI"] if q is not None else "0",
+                "Put OI Text": p["CompactOI"] if p is not None else "0",
                 "Call Change Text": c["CompactChange"] if c is not None else "0",
-                "Put Change Text": q["CompactChange"] if q is not None else "0",
+                "Put Change Text": p["CompactChange"] if p is not None else "0",
             })
         combined_df = pd.DataFrame(combined)
 
-        # For OI tab bars = current OI. For OI Change tab bars = actual change.
         value_field = "OI" if metric == "OI" else "Change"
         value_title = "Open Interest" if metric == "OI" else "OI Change"
+        values = chart_df.to_dict("records")
 
-        # The chart spec owns its data. Passing a second dataframe to
-        # st.vega_lite_chart can override the embedded values in some Streamlit
-        # versions, which was the reason the previous bars could disappear.
-        base_values = chart_df.to_dict("records")
         spec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
             "width": "container",
             "height": 430,
-            "data": {"values": base_values},
+            "data": {"values": values},
+            "resolve": {"scale": {"y": "shared"}},
             "layer": [
                 {
-                    "mark": {"type": "bar", "size": 20, "cornerRadiusTopLeft": 3, "cornerRadiusTopRight": 3},
+                    "mark": {"type": "bar", "size": 18, "cornerRadiusTopLeft": 3, "cornerRadiusTopRight": 3},
                     "encoding": {
-                        "x": {"field": "strike", "type": "ordinal", "sort": "ascending", "axis": {"title": "Strike Price", "labelAngle": -55, "labelFontSize": 10}},
-                        "xOffset": {"field": "Side", "type": "nominal"},
+                        "x": {"field": "strike_label", "type": "ordinal", "sort": {"field": "strike", "order": "ascending"}, "axis": {"title": "Strike Price", "labelAngle": -55, "labelFontSize": 10}},
+                        "xOffset": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"]}},
                         "y": {"field": value_field, "type": "quantitative", "title": value_title, "axis": {"format": ".2s"}},
-                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": {"title": None, "orient": "bottom"}},
+                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#22c55e", "#ef4444"]}, "legend": {"title": None, "orient": "bottom"}},
                         "tooltip": [
                             {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
                             {"field": "Side", "type": "nominal", "title": "Side"},
@@ -1057,35 +1077,38 @@ def main_trading_dashboard():
             ]
         }
 
-        # In the Open Interest view, optionally print OI Change above the bars.
+        # Show the real selected-window/session OI change directly above OI bars.
         if metric == "OI" and show_oi_change:
             spec["layer"].append({
-                "mark": {"type": "text", "dy": -9, "fontSize": 10, "fontWeight": 700},
+                "mark": {"type": "text", "dy": -7, "fontSize": 9, "fontWeight": 700},
                 "encoding": {
-                    "x": {"field": "strike", "type": "ordinal", "sort": "ascending"},
-                    "xOffset": {"field": "Side", "type": "nominal"},
+                    "x": {"field": "strike_label", "type": "ordinal", "sort": {"field": "strike", "order": "ascending"}},
+                    "xOffset": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"]}},
                     "y": {"field": "OI", "type": "quantitative"},
                     "text": {"field": "CompactChange", "type": "nominal"},
                     "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#166534", "#991b1b"]}, "legend": None}
                 }
             })
 
-        # Transparent strike-wide hit area. One hover popup contains CALL + PUT.
-        # Use an explicit maxY so it covers positive OI and positive/negative change.
+        # One invisible strike-wide layer gives a single combined Call+Put popup.
         if not combined_df.empty:
             if metric == "OI":
-                combined_df["HoverTop"] = combined_df[["Call OI", "Put OI"]].max(axis=1).clip(lower=1)
-                y_zero = 0
+                top = combined_df[["Call OI", "Put OI"]].max(axis=1).clip(lower=1)
+                bottom = pd.Series([0.0] * len(combined_df))
             else:
-                combined_df["HoverTop"] = combined_df[["Call OI Change", "Put OI Change"]].abs().max(axis=1).clip(lower=1)
-                y_zero = 0
+                max_abs = combined_df[["Call OI Change", "Put OI Change"]].abs().max(axis=1).clip(lower=1)
+                top = max_abs
+                bottom = -max_abs
+            hover_df = combined_df.copy()
+            hover_df["hover_top"] = top
+            hover_df["hover_bottom"] = bottom
             spec["layer"].append({
-                "data": {"values": combined_df.to_dict("records")},
+                "data": {"values": hover_df.to_dict("records")},
                 "mark": {"type": "rect", "opacity": 0.001},
                 "encoding": {
-                    "x": {"field": "strike", "type": "ordinal", "sort": "ascending"},
-                    "y": {"datum": y_zero, "type": "quantitative"},
-                    "y2": {"field": "HoverTop", "type": "quantitative"},
+                    "x": {"field": "strike_label", "type": "ordinal", "sort": {"field": "strike", "order": "ascending"}},
+                    "y": {"field": "hover_bottom", "type": "quantitative"},
+                    "y2": {"field": "hover_top"},
                     "tooltip": [
                         {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
                         {"field": "Call OI Text", "type": "nominal", "title": "CALL OI"},
@@ -1098,16 +1121,15 @@ def main_trading_dashboard():
                 }
             })
 
-        # ATM marker.
-        if spot is not None:
+        if spot is not None and not chart_df.empty:
             atm = float(chart_df.iloc[(chart_df["strike"] - float(spot)).abs().argmin()]["strike"])
             spec["layer"].append({
-                "data": {"values": [{"atm": atm}]},
-                "mark": {"type": "rule", "strokeDash": [5, 4], "strokeWidth": 1.5, "color": "#374151"},
-                "encoding": {"x": {"field": "atm", "type": "ordinal"}}
+                "data": {"values": [{"atm_label": f"{atm:.0f}"}]},
+                "mark": {"type": "rule", "strokeDash": [5, 4], "strokeWidth": 1.5, "color": "#475569"},
+                "encoding": {"x": {"field": "atm_label", "type": "ordinal", "sort": {"field": "atm_label", "order": "ascending"}}}
             })
 
-        st.vega_lite_chart(spec=spec, use_container_width=True)
+        st.vega_lite_chart(spec, use_container_width=True)
 
     def oi_visual_dashboard(df, spot, index_name):
         """Only the two requested visual modules: Open Interest and OI Change."""
@@ -1155,11 +1177,14 @@ def main_trading_dashboard():
                 return chosen[0].timestamp(), chosen[1].timestamp(), show_change
 
             selected_minutes = dict(window_options)[choice]
+            # The end of every window is always the latest available snapshot.
+            # If the requested duration is longer than the stored history, use
+            # the oldest available snapshot rather than silently reusing the
+            # current snapshot. This makes the displayed baseline explicit.
             if selected_minutes is None:
                 start_ts = min_ts
             else:
                 target = max_ts - selected_minutes * 60
-                # Choose the snapshot at or immediately before the target.
                 candidates = [ts for ts, _ in hist if ts <= target]
                 start_ts = candidates[-1] if candidates else min_ts
             return start_ts, max_ts, show_change
