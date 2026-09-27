@@ -916,109 +916,150 @@ def main_trading_dashboard():
         if pcr is None:
             return "PCR data उपलब्ध नहीं है।"
         if pcr < 0.70:
-            trend = "BEARISH"; zone = "PCR < 0.70"; detail = "Call OI के मुकाबले Put OI काफी कम है; call-heavy/resistance-side positioning दिख रही है।"
+            bias = "CALL OI की तुलना में PUT OI काफी कम है — option-chain में bearish/resistance bias दिख रहा है।"; zone = "बहुत कम PCR"
         elif pcr < 1.00:
-            trend = "MILD BEARISH"; zone = "0.70 – 0.99"; detail = "Call OI Put OI से अधिक है; हल्का call-heavy bias है।"
+            bias = "CALL OI, PUT OI से अधिक है — हल्का bearish/resistance bias माना जा सकता है, लेकिन यह अकेला trend confirmation नहीं है।"; zone = "CALL-heavy zone"
         elif pcr <= 1.30:
-            trend = "NEUTRAL / BALANCED"; zone = "1.00 – 1.30"; detail = "Put और Call OI अपेक्षाकृत balanced हैं; price और OI-change से confirmation देखें।"
+            bias = "PUT OI, CALL OI के बराबर या अधिक है — support-side bias दिख सकता है; price और OI-change से confirmation जरूरी है।"; zone = "Balanced / mild PUT-heavy"
         else:
-            trend = "BULLISH / PUT-HEAVY"; zone = "> 1.30"; detail = "Put OI काफी अधिक है; support-side positioning मजबूत हो सकती है, लेकिन बहुत ऊंचा PCR crowded positioning भी दिखा सकता है।"
-        return (f"<b>Current PCR:</b> {pcr:.2f}<br><b>Trend:</b> {trend}<br><b>Current Zone:</b> {zone}<br>"
-                f"<b>Meaning:</b> {detail}<br><br><b>PCR Range Details</b><br>"
-                f"&lt; 0.70 → BEARISH<br>0.70 – 0.99 → MILD BEARISH<br>1.00 – 1.30 → NEUTRAL / BALANCED<br>"
-                f"&gt; 1.30 → BULLISH / PUT-HEAVY<br><br><b>Formula:</b> Total PUT OI ÷ Total CALL OI<br>"
-                f"<b>Note:</b> PCR अकेले BUY/SELL signal नहीं है।")
+            bias = "PUT OI काफी अधिक है — support-side bias मजबूत दिख सकता है, लेकिन बहुत ऊंचा PCR crowded positioning/contrarian risk भी दिखा सकता है।"; zone = "High PUT-heavy zone"
+        return f'''<b>PCR = {pcr:.2f}</b><br><b>Zone:</b> {zone}<br>{bias}<br><br>
+            <b>कैसे पढ़ें:</b> PCR = Total PUT OI ÷ Total CALL OI।<br>
+            <b>क्या देखें:</b> PCR के साथ NIFTY price, OI Change और 15/30/60m confirmation को मिलाकर देखें।<br>
+            <b>सावधानी:</b> PCR अकेले BUY/SELL signal नहीं है।'''
 
     def _max_pain_explanation(pain, spot):
         if pain is None or spot is None: return "Max Pain data उपलब्ध नहीं है।"
         dist = float(spot) - float(pain); pct = (abs(dist) / float(spot) * 100.0) if spot else 0.0
-        if abs(dist) < 25: relation = "Spot Max Pain के बहुत पास है।"
-        elif dist > 0: relation = f"Spot Max Pain से {abs(dist):.0f} points ऊपर है।"
-        else: relation = f"Spot Max Pain से {abs(dist):.0f} points नीचे है।"
-        return (f"<b>Max Pain Price:</b> {pain:.0f}<br><b>Spot:</b> {spot:.2f}<br>"
-                f"<b>Distance:</b> {abs(dist):.0f} points ({pct:.2f}%)<br><b>Relation:</b> {relation}<br><br>"
-                f"<b>Meaning:</b> Current option OI के आधार पर calculated max-pain strike।<br>"
-                f"<b>Note:</b> इसे guaranteed target या future-price prediction न मानें।")
+        if abs(dist) < 25: relation = "Spot Max Pain के बहुत पास है; expiry-related pinning/reference zone के रूप में देखा जा सकता है।"
+        elif dist > 0: relation = f"Spot Max Pain से लगभग {abs(dist):.0f} points ऊपर है; Max Pain नीचे reference zone है।"
+        else: relation = f"Spot Max Pain से लगभग {abs(dist):.0f} points नीचे है; Max Pain ऊपर reference zone है।"
+        return f'''<b>Max Pain = {pain:.0f}</b><br>{relation}<br><b>Distance:</b> {abs(dist):.0f} points ({pct:.2f}%)<br><br>
+            <b>इसका मतलब:</b> मौजूदा option OI के आधार पर वह expiry strike जहां aggregate intrinsic-payout calculation न्यूनतम होती है।<br>
+            <b>क्या देखें:</b> Spot और Max Pain का gap, expiry के पास price behavior और major Call/Put OI walls।<br>
+            <b>सावधानी:</b> Max Pain को guaranteed target या future price prediction न मानें।'''
 
     def _vix_explanation(vix, change_pct):
         if vix is None: return "India VIX data उपलब्ध नहीं है।"
-        if vix < 15: level = "LOW VOLATILITY"; meaning = "बाजार की implied volatility अपेक्षाकृत कम है।"
-        elif vix < 20: level = "MODERATE VOLATILITY"; meaning = "बाजार में मध्यम volatility expectation है।"
-        elif vix < 25: level = "HIGH VOLATILITY"; meaning = "बाजार में ऊंची volatility expectation है।"
-        else: level = "VERY HIGH VOLATILITY"; meaning = "बाजार में बहुत ऊंची volatility expectation है।"
-        move = "VIX UP" if change_pct > 3 else ("VIX DOWN" if change_pct < -3 else "VIX STABLE")
-        return (f"<b>India VIX:</b> {vix:.2f}<br><b>Market Volatility:</b> {level}<br>"
-                f"<b>Change:</b> {change_pct:+.2f}% ({move})<br><b>Meaning:</b> {meaning}<br><br>"
-                f"<b>Range:</b> &lt;15 Low • 15–20 Moderate • 20–25 High • ≥25 Very High<br>"
-                f"<b>Note:</b> VIX direction NIFTY की direction की guarantee नहीं देता।")
+        if vix < 15: level = "कम implied volatility zone"
+        elif vix < 20: level = "मध्यम volatility zone"
+        elif vix < 25: level = "उच्च volatility zone"
+        else: level = "बहुत ऊंचा volatility zone"
+        if change_pct > 3: move = "VIX तेजी से बढ़ रहा है — हालिया expected volatility बढ़ रही है।"
+        elif change_pct < -3: move = "VIX घट रहा है — हालिया expected volatility कम हो रही है।"
+        else: move = "VIX में बड़ा बदलाव नहीं है — volatility expectation अपेक्षाकृत स्थिर है।"
+        return f'''<b>India VIX = {vix:.2f}</b><br><b>Level:</b> {level}<br>{move}<br><br>
+            <b>इसका मतलब:</b> India VIX NIFTY options के prices से अगले 30 calendar days की expected volatility को दर्शाता है।<br>
+            <b>क्या देखें:</b> VIX ↑ के साथ option premiums/price swings बढ़ सकते हैं; VIX ↓ में volatility pressure घट सकता है।<br>
+            <b>सावधानी:</b> VIX direction यह नहीं बताती कि NIFTY निश्चित रूप से ऊपर जाएगा या नीचे।'''
 
-    def _trend_strength(score, ready=True):
-        if not ready: return "WAIT / INSUFFICIENT HISTORY"
-        a = abs(float(score))
-        if score >= 0.18: return "STRONG BULLISH" if a >= 0.30 else "BULLISH"
-        if score <= -0.18: return "STRONG BEARISH" if a >= 0.30 else "BEARISH"
-        return "SIDEWAYS / MIXED" if a < 0.10 else "WEAK SIDEWAYS"
-
-    def _direction_arrow(score, ready=True):
-        if not ready: return "⏸"
-        if score >= 0.18: return "↑"
-        if score <= -0.18: return "↓"
-        return "→"
-
-    def _score_explanation(minutes, score, detail, all_details=None):
+    def _score_explanation(minutes, score, detail):
         if not detail.get("ready"):
-            arrows = ""
-            if all_details:
-                arrows = "<br><b>Trend Direction:</b> " + " • ".join(
-                    f"{m}m {_direction_arrow(all_details[m].get('score',0), all_details[m].get('ready',False))}" for m in (15,30,60))
-            return (f"<b>{minutes} MINUTE MARKET TREND</b><br><b>Trend:</b> WAIT<br><b>Score:</b> --<br>"
-                    f"<b>Strength:</b> WAIT / INSUFFICIENT HISTORY{arrows}<br><br>"
-                    f"<b>Reason:</b> {minutes}m historical data पर्याप्त नहीं है।")
-        trend = "BULLISH" if score >= 0.18 else ("BEARISH" if score <= -0.18 else "SIDEWAYS")
-        arrows = ""
-        if all_details:
-            arrows = "<br><b>3-TIMEFRAME DIRECTION:</b> " + " • ".join(
-                f"{m}m {_direction_arrow(all_details[m].get('score',0), all_details[m].get('ready',False))}" for m in (15,30,60))
-        return (f"<b>{minutes} MINUTE MARKET TREND</b><br><b>Trend:</b> {trend} {_direction_arrow(score)}<br>"
-                f"<b>Score:</b> {score:+.3f}<br><b>Strength:</b> {_trend_strength(score)}{arrows}<br><br>"
-                f"<b>SCORE DETAILS</b><br>CE OI Shift: {detail.get('ce_oi',0):+.0f}<br>"
-                f"PE OI Shift: {detail.get('pe_oi',0):+.0f}<br>CE OI Change Shift: {detail.get('ce_oich',0):+.0f}<br>"
-                f"PE OI Change Shift: {detail.get('pe_oich',0):+.0f}<br><br>"
-                f"<b>Reading:</b> 15m short-term, 30m intermediate और 60m broader intraday context है।")
+            return f'''<b>{minutes} मिनट:</b> historical data पर्याप्त नहीं है।<br><b>मतलब:</b> इस timeframe का score अभी reliable confirmation नहीं देता।<br><b>क्या देखें:</b> कम से कम {minutes}m history उपलब्ध होने के बाद score को price + OI change के साथ पढ़ें।'''
+        if score >= 0.18: bias = "Bullish-side bias"
+        elif score <= -0.18: bias = "Bearish-side bias"
+        else: bias = "Sideways / mixed bias"
+        return f'''<b>{minutes}m Score = {score:+.3f}</b><br><b>Interpretation:</b> {bias}<br>
+            <b>Score कैसे बनता है:</b> Put-vs-Call OI shift और OI-change shift को combine किया गया है।<br>
+            <b>Data:</b> CE OI shift {detail.get("ce_oi", 0):+.0f} • PE OI shift {detail.get("pe_oi", 0):+.0f}<br><b>OI Change shift:</b> CE {detail.get("ce_oich", 0):+.0f} • PE {detail.get("pe_oich", 0):+.0f}<br><br>
+            <b>क्या देखें:</b> 15m = short-term, 30m = intermediate, 60m = broader intraday context। तीनों एक दिशा में हों तो confirmation मजबूत समझा जा सकता है; अलग हों तो WAIT/MIXED context रखें।<br>
+            <b>सावधानी:</b> score rule-based indicator है, guaranteed prediction नहीं।'''
 
     def _four_factor_explanation(side, sig):
         if not sig: return f"{side} data उपलब्ध नहीं है।"
-        state = sig.get("state", "LOADING")
-        score = int(sig.get("score", 0))
-        price = float(sig.get("price_pct", 0)); vol = float(sig.get("volume_pct", 0)); oi = float(sig.get("oi_pct", 0)); oich = float(sig.get("oich", 0))
+        state = sig.get("state", "LOADING"); score = int(sig.get("score", 0)); price = float(sig.get("price_pct", 0)); vol = float(sig.get("volume_pct", 0)); oi = float(sig.get("oi_pct", 0)); oich = float(sig.get("oich", 0))
         meanings = {
             "LONG BUILDUP": "Price ↑ + Volume ↑ + OI ↑ + session OI change positive: fresh long-side participation का pattern।",
             "SHORT BUILDUP": "Price ↓ + Volume ↑ + OI ↑ + session OI change positive: fresh short-side participation का pattern।",
             "SHORT COVERING": "Price ↑ + OI ↓ + OI change negative: shorts exit होने का pattern।",
             "LONG UNWINDING": "Price ↓ + OI ↓ + OI change negative: longs exit होने का pattern।",
-            "MIXED / NO CONFIRMATION": "चारों factors एक ही दिशा में नहीं हैं; साफ confirmation नहीं मिला।"
+            "MIXED / NO CONFIRMATION": "चारों factors एक ही दिशा में नहीं हैं; इसलिए साफ buildup/covering confirmation नहीं मिला।"
         }
-        checks = [
-            ("PRICE", price > 0 if state in ("LONG BUILDUP","SHORT COVERING") else price < 0 if state in ("SHORT BUILDUP","LONG UNWINDING") else False),
-            ("VOLUME", vol > 0),
-            ("OI", oi > 0 if state in ("LONG BUILDUP","SHORT BUILDUP") else oi < 0 if state in ("SHORT COVERING","LONG UNWINDING") else False),
-            ("OI CHANGE", oich > 0 if state in ("LONG BUILDUP","SHORT BUILDUP") else oich < 0 if state in ("SHORT COVERING","LONG UNWINDING") else False),
-        ]
-        rows = "<br>".join(f"{'🟢 ✓' if ok else '🔴 ✕'} <b>{name}</b>" for name, ok in checks)
-        return (f"<b>ATM {side} — 4 CONDITION CHECK</b><br>{rows}<br><br><b>Matched:</b> {score}/4<br>"
-                f"<b>State:</b> {state}<br><b>Meaning:</b> {meanings.get(state, 'Data loading है।')}<br><br>"
-                f"<b>Raw Details:</b><br>Price: {price:+.2f}%<br>Volume: {vol:+.1f}%<br>OI: {oi:+.2f}%<br>OI Change: {oich:+.0f}")
+        return f'''<b>{side}: {state} ({score}/4)</b><br>{meanings.get(state, "Data अभी loading है।")}<br><br>
+            <b>Price:</b> {price:+.2f}% &nbsp; <b>Volume:</b> {vol:+.1f}%<br>
+            <b>OI:</b> {oi:+.2f}% &nbsp; <b>OI Change:</b> {oich:+.0f}<br><br>
+            <b>{score}/4 का मतलब:</b> चार checks में {score} condition match हुई। 1/4 का अर्थ केवल एक condition match हुई — यह confirmation नहीं है।<br>
+            <b>क्या देखें:</b> अगले snapshot में price, volume, OI और OI-change का alignment तथा 15/30/60m context।<br>
+            <b>क्या करें:</b> केवल 1/4 या MIXED पर तुरंत trade signal न मानें; independent confirmation का इंतजार करें।'''
 
     st.markdown(r'''<style>
-    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:20;}
+    /* ===== HOVER POPUP OVERLAY FIX =====
+       Streamlit columns/vertical blocks can create clipping/stacking contexts.
+       Keep the popup above every following row/tab and open it upward so the
+       lower cards cannot cover its lower edge. */
+    [data-testid="stHorizontalBlock"],
+    [data-testid="column"],
+    [data-testid="stColumn"],
+    [data-testid="stVerticalBlock"],
+    [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stElementContainer"]{
+        overflow:visible !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(.metric-hover-wrap:hover),
+    [data-testid="column"]:has(.metric-hover-wrap:hover),
+    [data-testid="stColumn"]:has(.metric-hover-wrap:hover),
+    [data-testid="stVerticalBlock"]:has(.metric-hover-wrap:hover),
+    [data-testid="stVerticalBlockBorderWrapper"]:has(.metric-hover-wrap:hover),
+    [data-testid="stElementContainer"]:has(.metric-hover-wrap:hover){
+        position:relative !important;
+        z-index:1000000 !important;
+        overflow:visible !important;
+    }
+    .metric-hover-wrap{
+        position:relative;
+        width:100%;
+        min-height:78px;
+        border:1px solid rgba(100,116,139,.18);
+        border-radius:14px;
+        background:rgba(255,255,255,.78);
+        padding:10px 13px;
+        box-sizing:border-box;
+        cursor:help;
+        margin-bottom:8px;
+        z-index:1;
+        isolation:isolate;
+    }
+    .metric-hover-wrap:hover{
+        z-index:1000001 !important;
+        border-color:rgba(59,130,246,.45);
+        box-shadow:0 7px 20px rgba(15,23,42,.10);
+    }
     .metric-hover-main{position:relative;z-index:2;}
     .metric-hover-label{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.02em;}
     .metric-hover-value{font-size:22px;font-weight:850;color:#0f172a;margin-top:2px;}
-    .metric-hover-popup{position:absolute;left:0;top:calc(100% + 7px);width:min(430px,calc(100vw - 42px));padding:14px 16px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 18px 45px rgba(15,23,42,.30);font-size:12px;line-height:1.55;opacity:0;visibility:hidden;transform:translateY(-5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;}
-    .metric-hover-wrap:hover{border-color:rgba(59,130,246,.45);box-shadow:0 7px 20px rgba(15,23,42,.10);}
-    .metric-hover-wrap:hover .metric-hover-popup{opacity:1;visibility:visible;transform:translateY(0);}
+    .metric-hover-popup{
+        position:absolute;
+        left:0;
+        bottom:calc(100% + 10px);
+        top:auto;
+        width:min(430px,calc(100vw - 42px));
+        max-height:min(62vh,560px);
+        overflow:auto;
+        padding:14px 16px;
+        border-radius:14px;
+        background:#0f172a;
+        color:#f8fafc;
+        box-shadow:0 20px 55px rgba(15,23,42,.42),0 0 0 1px rgba(255,255,255,.10);
+        font-size:12px;
+        line-height:1.55;
+        opacity:0;
+        visibility:hidden;
+        transform:translateY(5px);
+        transition:opacity .14s ease,transform .14s ease,visibility .14s ease;
+        pointer-events:none;
+        z-index:1000002 !important;
+    }
+    .metric-hover-wrap:hover .metric-hover-popup{
+        opacity:1;
+        visibility:visible;
+        transform:translateY(0);
+    }
     .metric-hover-popup b{color:#fff;}
     .ff-hover{min-height:96px;}
+    /* On short screens keep the popup usable and away from the browser edge. */
+    @media (max-height:700px){
+        .metric-hover-popup{max-height:52vh;}
+    }
     </style>''',unsafe_allow_html=True)
 
     def max_pain(df):
@@ -1202,15 +1243,6 @@ def main_trading_dashboard():
             ]
         }
 
-        # OI Change must be a true diverging chart: positive bars rise above zero
-        # and negative bars fall below zero. This makes every selected time window
-        # visually comparable instead of stretching the chart around current OI.
-        if metric != "OI":
-            spec["layer"].append({
-                "mark": {"type": "rule", "color": "#64748b", "strokeWidth": 1.2},
-                "encoding": {"y": {"datum": 0}}
-            })
-
         # Show the real selected-window/session OI change directly above OI bars.
         if metric == "OI" and show_oi_change:
             spec["layer"].append({
@@ -1385,7 +1417,6 @@ def main_trading_dashboard():
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
             _oi_video_style_chart(chart_df, spot, "Open Interest", show_change, metric="OI")
-            st.caption(f"Selected OI baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Bars use the current OI snapshot; labels show the selected-window OI change.")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "OI"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "OI"].sum()) if not chart_df.empty else 0
@@ -1414,15 +1445,14 @@ def main_trading_dashboard():
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
             _oi_video_style_chart(chart_df, spot, "OI Change", show_change, metric="CHANGE")
-            st.caption(f"Selected OI Change baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Every bar = current OI − selected-window baseline OI; positive above zero, negative below zero.")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("CALL OI CHANGE", fmt_bar_value(total_call))
             m2.metric("PUT OI CHANGE", fmt_bar_value(total_put))
-            m3.metric("WINDOW START", datetime.fromtimestamp(start_ts).strftime("%H:%M"))
-            m4.metric("WINDOW END", datetime.fromtimestamp(end_ts).strftime("%H:%M"))
+            m3.metric("NIFTY AT START", fmt_price(spot))
+            m4.metric("NIFTY CURRENT", fmt_price(spot))
             st.caption(
                 f"Baseline: {datetime.fromtimestamp(start_ts).strftime('%I:%M %p')} → "
                 f"Current: {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • "
@@ -1555,156 +1585,98 @@ def main_trading_dashboard():
         with fc1:
             st.markdown(f"**ATM Strike:** {four_factor.get('strike', 0):.0f}  \n**History:** {four_factor.get('minutes')}m")
         with fc2:
-            _hover_card("ATM CALL", f"{ce_sig['score']}/4 MATCH", _four_factor_explanation("CALL", ce_sig), "atm-call", "metric-hover-card ff-hover")
+            _hover_card("ATM CE", f"{ce_sig['state']} ({ce_sig['score']}/4)", _four_factor_explanation("CE", ce_sig), "atm-ce", "metric-hover-card ff-hover")
         with fc3:
-            _hover_card("ATM PUT", f"{pe_sig['score']}/4 MATCH", _four_factor_explanation("PUT", pe_sig), "atm-put", "metric-hover-card ff-hover")
+            _hover_card("ATM PE", f"{pe_sig['state']} ({pe_sig['score']}/4)", _four_factor_explanation("PE", pe_sig), "atm-pe", "metric-hover-card ff-hover")
         st.caption("नोट: यह rule-based confirmation है; इसे अकेले trade signal या guaranteed prediction न मानें।")
     else:
         st.info("⏳ 4-factor confirmation के लिए कम से कम 15 मिनट की historical snapshot data चाहिए।")
 
-    # -----------------------------------------------------------------
-    # ALERTS — KEEP S/R ALERT SEPARATE FROM THE 50-POINT SWING ENGINE
-    # -----------------------------------------------------------------
-    # 1) MARKET STATUS: informational only; it does not itself create an alert.
-    status_bg = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "SIDEWAYS": "#eab308", "LOADING": "#64748b"}.get(trend, "#64748b")
-    status_fg = "white" if trend != "SIDEWAYS" else "#422006"
-    st.markdown(
-        f"<div style='border:2px solid {status_bg};border-radius:14px;padding:12px 18px;margin:8px 0 12px;background:rgba(148,163,184,.07);'>"
-        f"<div style='font-size:20px;font-weight:800;'>📊 MARKET STATUS</div>"
-        f"<div style='font-size:18px;font-weight:800;color:{status_bg};'>TREND: {trend}</div>"
-        f"<div style='font-size:17px;font-weight:700;'>SCORE: {score:+.2f}</div></div>",
-        unsafe_allow_html=True
-    )
-
-    # 2) EXISTING S/R ALERT — intentionally independent of the swing setup.
+    # SUPPORT / RESISTANCE 50-POINT ALERT
     alert_html = ""
     if spot and support and resistance:
         if abs(spot - support) <= 15 and score >= -0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🟢 S/R BUY ALERT<br><span style='font-size:15px;'>Support के पास | Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</span></div>"
+            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🚀 S/R BUY ALERT: Support ({support:.0f}) के पास! Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</div>"
         elif abs(spot - resistance) <= 15 and score <= 0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>🔴 S/R SELL ALERT<br><span style='font-size:15px;'>Resistance के पास | Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</span></div>"
-    if alert_html:
-        st.markdown(alert_html, unsafe_allow_html=True)
+            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>⚠️ S/R SELL ALERT: Resistance ({resistance:.0f}) के पास! Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</div>"
+    if alert_html: st.markdown(alert_html, unsafe_allow_html=True)
 
-    # 3) 50-POINT SWING SETUP + ACTUAL SWING ENTRY ALERT
-    #    IMPORTANT: the setup itself NEVER becomes a BUY/SELL alert.
-    #    A Swing BUY/SELL alert is shown only after all entry conditions match.
+    # SWING HIGH / LOW FAST SCALP ALERT (EXISTING FEATURE)
     swing_low, swing_high = get_swing_levels(st.session_state.live_history)
-    swing_setup_html = ""
-    swing_entry_alert_html = ""
+    swing_alert_html = ""
+    if spot and swing_low and swing_high:
+        if abs(spot - swing_low) <= 15 and score >= -0.05:
+            swing_alert_html = f"<div class='blinking-alert' style='background-color:#e0f2fe; color:#0369a1; border-color:#0284c7;'>⚡ SWING BUY ALERT (Fast Scalp): Local Swing Low ({swing_low:.0f}) के पास! Entry: {swing_low:.0f} | Target: {swing_low+50:.0f} | SL: {swing_low-15:.0f}</div>"
+        elif abs(spot - swing_high) <= 15 and score <= 0.05:
+            swing_alert_html = f"<div class='blinking-alert' style='background-color:#fef3c7; color:#92400e; border-color:#f59e0b;'>⚡ SWING SELL ALERT (Fast Scalp): Local Swing High ({swing_high:.0f}) के पास! Entry: {swing_high:.0f} | Target: {swing_high-50:.0f} | SL: {swing_high+15:.0f}</div>"
+    if swing_alert_html: st.markdown(swing_alert_html, unsafe_allow_html=True)
 
+    # SWING 50-POINT OPPORTUNITY INSIDE SUPPORT / RESISTANCE ZONE (NEW FEATURE)
+    # This is intentionally separate from the two existing alerts above. It only
+    # activates when BOTH swing points sit inside the current S/R zone and the
+    # distance between them is at least 50 points.
+    swing_zone_alert_html = ""
     if (spot is not None and support is not None and resistance is not None
             and swing_low is not None and swing_high is not None):
         zone_low = min(float(support), float(resistance))
         zone_high = max(float(support), float(resistance))
         swing_range = float(swing_high) - float(swing_low)
-        swings_inside_zone = (
-            zone_low <= float(swing_low)
-            and float(swing_high) <= zone_high
-            and float(swing_low) < float(swing_high)
-        )
+        swings_inside_zone = (zone_low <= float(swing_low)
+                              and float(swing_high) <= zone_high
+                              and float(swing_low) < float(swing_high))
 
-        if swing_range < 50:
-            swing_setup_html = (
-                f"<div style='border:2px solid #94a3b8;border-radius:12px;padding:14px;margin:8px 0;"
-                f"background:rgba(148,163,184,.08);'>"
-                f"<div style='font-size:18px;font-weight:800;'>⚪ NO 50-POINT SETUP</div>"
-                f"<div>Swing Range: <b>{swing_range:.0f} Points</b></div>"
-                f"<div>Required: <b>50+ Points</b></div></div>"
-            )
-        elif not swings_inside_zone:
-            swing_setup_html = (
-                f"<div style='border:2px solid #94a3b8;border-radius:12px;padding:14px;margin:8px 0;"
-                f"background:rgba(148,163,184,.08);'>"
-                f"<div style='font-size:18px;font-weight:800;'>⚪ NO 50-POINT SETUP</div>"
-                f"<div>Swing Range: <b>{swing_range:.0f} Points</b></div>"
-                f"<div>Required: <b>50+ Points</b> + both swing points inside S/R zone</div></div>"
-            )
-        else:
-            setup_valid = swing_range >= 50 and swings_inside_zone
-            zone_status = "INSIDE S/R"
-            setup_status = "🟢 VALID SETUP" if setup_valid else "⚪ NO VALID SETUP"
-            swing_setup_html = (
-                f"<div style='border:2px solid #16a34a;border-radius:12px;padding:14px;margin:8px 0;"
-                f"background:rgba(22,163,74,.06);'>"
-                f"<div style='font-size:19px;font-weight:800;'>⚡ SWING OPPORTUNITY SETUP</div>"
-                f"<div style='margin-top:6px;'><b>S/R ZONE</b></div>"
-                f"<div>Support&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{support:.0f}</b></div>"
-                f"<div>Resistance&nbsp;&nbsp;&nbsp; <b>{resistance:.0f}</b></div>"
-                f"<div style='margin-top:6px;'><b>SWING RANGE</b></div>"
-                f"<div>Swing Low&nbsp;&nbsp;&nbsp;&nbsp; <b>{swing_low:.0f}</b></div>"
-                f"<div>Swing High&nbsp;&nbsp;&nbsp; <b>{swing_high:.0f}</b></div>"
-                f"<div>Range&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{swing_range:.0f} Points ✅</b></div>"
-                f"<div style='margin-top:6px;'>Zone Status&nbsp;&nbsp; <b>✅ {zone_status}</b></div>"
-                f"<div>Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{trend}</b></div>"
-                f"<div>Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{score:+.2f}</b></div>"
-                f"<div style='margin-top:6px;'>SETUP STATUS&nbsp; <b>{setup_status}</b></div>"
-                f"</div>"
-            )
+        if swings_inside_zone and swing_range >= 50:
+            swing_buy_entry = float(swing_low)
+            swing_buy_exit = float(swing_high)
+            swing_sell_entry = float(swing_high)
+            swing_sell_exit = float(swing_low)
 
-            # ACTUAL SWING ENTRY CONDITIONS:
-            # BUY = valid 50+ setup + bullish trend + positive score + spot near Swing Low.
-            # SELL = valid 50+ setup + bearish trend + negative score + spot near Swing High.
-            swing_buy_condition = (
-                setup_valid
-                and trend == "BULLISH"
-                and score > 0
-                and abs(float(spot) - float(swing_low)) <= 15
-            )
-            swing_sell_condition = (
-                setup_valid
-                and trend == "BEARISH"
-                and score < 0
-                and abs(float(spot) - float(swing_high)) <= 15
-            )
-
-            if swing_buy_condition:
-                swing_entry_alert_html = (
-                    f"<div class='blinking-alert' style='background-color:#dcfce7;color:#166534;border-color:#16a34a;'>"
-                    f"🚨 SWING BUY ALERT"
-                    f"<div style='font-size:15px;margin-top:6px;text-align:left;'>"
-                    f"Entry Price : <b>{swing_low:.0f}</b><br>"
-                    f"Exit Price&nbsp;&nbsp; : <b>{swing_high:.0f}</b><br>"
-                    f"Potential&nbsp;&nbsp; : <b>+{swing_range:.0f} Points</b><br><br>"
-                    f"Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{trend}</b><br>"
-                    f"Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{score:+.2f}</b><br><br>"
-                    f"Status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>🟢 ENTRY CONDITION MET</b>"
-                    f"</div></div>"
+            # Alert at the lower swing when price is approaching the buy entry.
+            if abs(float(spot) - swing_buy_entry) <= 15 and score >= -0.05:
+                swing_zone_alert_html = (
+                    f"<div class='blinking-alert' style='background-color:#ecfdf5; color:#065f46; border-color:#10b981;'>"
+                    f"🎯 SWING 50-POINT BUY ALERT: S/R Zone के अंदर Swing Low → Swing High opportunity मिली! "
+                    f"Entry Price: {swing_buy_entry:.0f} | Exit Price: {swing_buy_exit:.0f} | "
+                    f"Potential Move: +{swing_range:.0f} Points | SL: {swing_buy_entry-15:.0f}"
+                    f"</div>"
                 )
-            elif swing_sell_condition:
-                swing_entry_alert_html = (
-                    f"<div class='blinking-alert' style='background-color:#fee2e2;color:#991b1b;border-color:#dc2626;'>"
-                    f"🚨 SWING SELL ALERT"
-                    f"<div style='font-size:15px;margin-top:6px;text-align:left;'>"
-                    f"Entry Price : <b>{swing_high:.0f}</b><br>"
-                    f"Exit Price&nbsp;&nbsp; : <b>{swing_low:.0f}</b><br>"
-                    f"Potential&nbsp;&nbsp; : <b>+{swing_range:.0f} Points</b><br><br>"
-                    f"Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{trend}</b><br>"
-                    f"Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{score:+.2f}</b><br><br>"
-                    f"Status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>🔴 ENTRY CONDITION MET</b>"
-                    f"</div></div>"
+            # Alert at the upper swing when price is approaching the sell entry.
+            elif abs(float(spot) - swing_sell_entry) <= 15 and score <= 0.05:
+                swing_zone_alert_html = (
+                    f"<div class='blinking-alert' style='background-color:#fff7ed; color:#9a3412; border-color:#f97316;'>"
+                    f"🎯 SWING 50-POINT SELL ALERT: S/R Zone के अंदर Swing High → Swing Low opportunity मिली! "
+                    f"Entry Price: {swing_sell_entry:.0f} | Exit Price: {swing_sell_exit:.0f} | "
+                    f"Potential Move: -{swing_range:.0f} Points | SL: {swing_sell_entry+15:.0f}"
+                    f"</div>"
                 )
+            # When the 50+ point range exists but spot is not yet near an entry,
+            # show a non-entry watch alert so the user knows the setup exists.
+            elif zone_low <= float(spot) <= zone_high:
+                swing_zone_alert_html = (
+                    f"<div class='blinking-alert' style='background-color:#eff6ff; color:#1e40af; border-color:#3b82f6;'>"
+                    f"📌 SWING 50-POINT SETUP FOUND: S/R Zone के अंदर Swing Low {swing_buy_entry:.0f} ↔ Swing High {swing_buy_exit:.0f} "
+                    f"| Range: {swing_range:.0f} Points | Buy Entry: {swing_buy_entry:.0f} → Exit: {swing_buy_exit:.0f} "
+                    f"| Sell Entry: {swing_sell_entry:.0f} → Exit: {swing_sell_exit:.0f}"
+                    f"</div>"
+                )
+    if swing_zone_alert_html:
+        st.markdown(swing_zone_alert_html, unsafe_allow_html=True)
 
-    if swing_setup_html:
-        st.markdown(swing_setup_html, unsafe_allow_html=True)
-    if swing_entry_alert_html:
-        st.markdown(swing_entry_alert_html, unsafe_allow_html=True)
-
-    # METRICS ROW — concise popups with the requested values and interpretations.
+    # METRICS ROW — hover explains exactly what each number means
     a, b, c, d, e, f = st.columns(6)
     with a:
-        _hover_card("NIFTY Spot", fmt_price(spot), f"<b>Selected Index:</b> {index_name}<br><b>Spot Price:</b> {fmt_price(spot)}", "nifty-spot")
+        _hover_card("NIFTY Spot", fmt_price(spot), "<b>Current NIFTY spot:</b> option-chain और trend calculations का underlying reference price।<br><b>क्या देखें:</b> Spot के साथ PCR, Max Pain, VIX और OI shifts को compare करें।", "nifty-spot")
     with b:
-        _hover_card("CALL OI", fmt_num(meta["call_oi"]), f"<b>Total CALL OI:</b> {fmt_num(meta['call_oi'])}<br><b>Resistance:</b> {fmt_price(resistance)}", "call-oi")
+        _hover_card("CALL OI", fmt_num(meta["call_oi"]), "<b>Total CALL Open Interest:</b> खुले हुए Call option contracts का कुल OI।<br><b>मतलब:</b> बड़े Call OI zones resistance/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "call-oi")
     with c:
-        _hover_card("PUT OI", fmt_num(meta["put_oi"]), f"<b>Total PUT OI:</b> {fmt_num(meta['put_oi'])}<br><b>Support:</b> {fmt_price(support)}", "put-oi")
+        _hover_card("PUT OI", fmt_num(meta["put_oi"]), "<b>Total PUT Open Interest:</b> खुले हुए Put option contracts का कुल OI।<br><b>मतलब:</b> बड़े Put OI zones support/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "put-oi")
     with d:
         pcr_value = (meta['put_oi']/meta['call_oi']) if meta['call_oi'] else 0
         _hover_card("PCR", f"{pcr_value:.2f}", _pcr_explanation(pcr_value), "pcr")
     with e:
         _hover_card("MAX PAIN", f"{pain:.0f}" if pain else "-", _max_pain_explanation(pain, spot), "max-pain")
     with f:
-        _hover_card("India VIX", f"{meta['vix']:.2f}" if meta.get('vix') is not None else "-", _vix_explanation(meta.get('vix'), meta.get('vix_change_pct',0)), "india-vix")
+        _hover_card("India VIX", f"{meta['vix']:.2f}", _vix_explanation(meta['vix'], meta['vix_change_pct']), "india-vix")
 
     bg = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "SIDEWAYS": "#eab308"}.get(trend, "#6b7280")
     st.markdown(f"<div class='trend' style='background:{bg};color:white'>TREND: {trend} | SCORE: {score:+.3f}</div>", unsafe_allow_html=True)
@@ -1714,16 +1686,9 @@ def main_trading_dashboard():
         d_val = details[mins]
         with col:
             if d_val["ready"]:
-                local_trend = "BULLISH" if d_val["score"] >= 0.18 else ("BEARISH" if d_val["score"] <= -0.18 else "SIDEWAYS")
-                local_arrow = _direction_arrow(d_val["score"])
-                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f} {local_arrow}", _score_explanation(mins, d_val['score'], d_val, details), f"score-{mins}m")
-                st.markdown(f"<div style='text-align:center;font-weight:800;margin-top:-5px;'>{local_arrow} {local_trend} • {_trend_strength(d_val['score'])}</div>", unsafe_allow_html=True)
+                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val), f"score-{mins}m")
             else:
-                _hover_card(f"⏱️ {mins}m Score", "WAIT ⏸", _score_explanation(mins, 0, d_val, details), f"score-{mins}m")
-                st.markdown("<div style='text-align:center;font-weight:800;margin-top:-5px;'>WAIT ⏸</div>", unsafe_allow_html=True)
-
-    direction_html = " • ".join(f"<b>{m}m</b> {_direction_arrow(details[m].get('score',0), details[m].get('ready',False))}" for m in (15,30,60))
-    st.markdown(f"<div style='border:1px solid rgba(100,116,139,.2);border-radius:12px;padding:9px 14px;margin:4px 0 12px;background:rgba(148,163,184,.06);text-align:center;'>📍 <b>3-TIMEFRAME TREND INDICATOR</b> &nbsp; {direction_html}</div>", unsafe_allow_html=True)
+                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val), f"score-{mins}m")
 
     x1, x2, x3, x4 = st.columns(4)
     x1.markdown(f"<div class='box entry'><b>ENTRY LEVEL</b><div class='big'>{fmt_price(entry)}</div><div class='muted'>{mode}</div></div>", unsafe_allow_html=True)
