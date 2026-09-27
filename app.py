@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """
 NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
@@ -189,6 +189,7 @@ if "live_history" not in st.session_state: st.session_state.live_history = None
 if "data_source" not in st.session_state: st.session_state.data_source = "NONE"
 if "cached_at" not in st.session_state: st.session_state.cached_at = None
 if "data_symbol" not in st.session_state: st.session_state.data_symbol = None
+if "oi_history" not in st.session_state: st.session_state.oi_history = deque(maxlen=720)
 
 # =====================================================================
 # HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
@@ -608,9 +609,12 @@ def main_trading_dashboard():
         return MARKET_CACHE_DIR / f"{safe}.json"
 
     def save_market_cache(symbol, spot, rows, meta, history_response=None):
-        """Persist the last successful market snapshot so closed-market sessions
-        can continue showing the most recent available data."""
+        """Persist the last successful market snapshot and a compact intraday
+        OI history so the OI/OI-Change charts can still be viewed after restart."""
         try:
+            history_rows = []
+            for ts, snap in st.session_state.get("oi_history", deque()):
+                history_rows.append({"ts": float(ts), "snap": snap})
             payload = {
                 "saved_at": time.time(),
                 "saved_at_text": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
@@ -619,6 +623,7 @@ def main_trading_dashboard():
                 "rows": rows,
                 "meta": meta,
                 "history": history_response,
+                "oi_history": history_rows[-720:],
             }
             _cache_file(symbol).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         except Exception:
@@ -687,14 +692,47 @@ def main_trading_dashboard():
             })
         return pd.DataFrame(res)
 
-    def take_snapshot(rows): return {key_for(r["strike"], r["type"]): {"oi": r["oi"], "oich": r["oich"], "ltp": r["ltp"], "volume": r.get("volume", 0)} for r in rows}
-    
-    def add_snapshot(rows):
+    def take_snapshot(rows):
+        return {
+            key_for(r["strike"], r["type"]): {
+                "oi": r["oi"], "oich": r["oich"], "ltp": r["ltp"], "volume": r.get("volume", 0)
+            } for r in rows
+        }
+
+    def restore_snapshot_history(raw_history):
+        """Restore compact persisted OI snapshots safely."""
+        try:
+            restored = deque(maxlen=720)
+            if isinstance(raw_history, list):
+                for item in raw_history[-720:]:
+                    if not isinstance(item, dict):
+                        continue
+                    ts = float(item.get("ts", 0))
+                    snap = item.get("snap")
+                    if ts > 0 and isinstance(snap, dict):
+                        restored.append((ts, snap))
+            if restored:
+                st.session_state.oi_history = restored
+        except Exception:
+            pass
+
+    def add_snapshot(rows, force=False):
+        """Keep one compact OI snapshot roughly every minute.
+        This is enough for 15/30/60 minute confirmation and the visual OI charts
+        while avoiding thousands of duplicate snapshots during live polling.
+        """
         now = time.time()
-        if "oi_history" not in st.session_state: st.session_state.oi_history = deque(maxlen=7200)
+        if "oi_history" not in st.session_state:
+            st.session_state.oi_history = deque(maxlen=720)
+        if not force and st.session_state.oi_history:
+            last_ts = st.session_state.oi_history[-1][0]
+            if now - last_ts < 55:
+                return False
         st.session_state.oi_history.append((now, take_snapshot(rows)))
-        cutoff = now - 75 * 60
-        while st.session_state.oi_history and st.session_state.oi_history[0][0] < cutoff: st.session_state.oi_history.popleft()
+        cutoff = now - 9 * 60 * 60
+        while st.session_state.oi_history and st.session_state.oi_history[0][0] < cutoff:
+            st.session_state.oi_history.popleft()
+        return True
     
     def old_snapshot(minutes):
         target = time.time() - minutes * 60
@@ -883,89 +921,216 @@ def main_trading_dashboard():
         if not data: return
         st.line_chart(pd.DataFrame(data).set_index("Time")[["Open", "High", "Low", "Close"]], height=400)
 
-    def double_bar(df, oi=True, spot=None, show_oi_change=False):
-        if df.empty: return
-        cols = ["strike", "ce_oi", "pe_oi", "ce_oich", "pe_oich"]
-        temp = df[cols].copy()
-        temp["total"] = temp["ce_oi"].abs() + temp["pe_oi"].abs()
-        temp = temp.nlargest(min(15, len(temp)), "total").sort_values("strike")
-
-        atm_strike = float(df["strike"].astype(float).iloc[(df["strike"].astype(float) - float(spot)).abs().argmin()]) if spot is not None else 0
-
-        if oi:
-            long_df = temp.melt(id_vars=["strike"], value_vars=["ce_oi", "pe_oi"], var_name="Side", value_name="Value")
-            long_df["Side"] = long_df["Side"].map({"ce_oi": "CALL OI", "pe_oi": "PUT OI"})
-            title = "CALL / PUT OI — Double Bar"
+    def _oi_chart_history(current_rows, window_minutes):
+        """Return baseline/current snapshots for the selected OI chart window."""
+        hist = list(st.session_state.get("oi_history", deque()))
+        if not hist:
+            return None, None, None, None
+        hist.sort(key=lambda x: x[0])
+        end_ts, end_snap = hist[-1]
+        if window_minutes is None:
+            start_ts, start_snap = hist[0]
         else:
-            long_df = temp.melt(id_vars=["strike"], value_vars=["ce_oich", "pe_oich"], var_name="Side", value_name="Value")
-            long_df["Side"] = long_df["Side"].map({"ce_oich": "CALL OI Change", "pe_oich": "PUT OI Change"})
-            title = "CALL / PUT OI Change — Double Bar"
+            target = end_ts - window_minutes * 60
+            chosen = None
+            for item in hist:
+                if item[0] <= target:
+                    chosen = item
+                else:
+                    break
+            if chosen is None:
+                start_ts, start_snap = hist[0]
+            else:
+                start_ts, start_snap = chosen
+        return start_ts, start_snap, end_ts, end_snap
 
-        st.markdown(f"### {title}")
+    def _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike):
+        """Build visual data matching the reference: solid OI + outlined/soft OI change."""
+        records = []
+        for _, r in df.iterrows():
+            strike = float(r["strike"])
+            if strike < min_strike or strike > max_strike:
+                continue
+            for side, oi_col, label in (("PUT", "pe_oi", "Put OI"), ("CALL", "ce_oi", "Call OI")):
+                typ = "PE" if side == "PUT" else "CE"
+                k = key_for(strike, typ)
+                cur = end_snap.get(k, {}) if isinstance(end_snap, dict) else {}
+                base = start_snap.get(k, {}) if isinstance(start_snap, dict) else {}
+                current_oi = float(cur.get("oi", r[oi_col]) or 0)
+                start_oi = float(base.get("oi", current_oi) or 0)
+                change = current_oi - start_oi
+                records.append({
+                    "strike": strike,
+                    "Side": side,
+                    "Label": label,
+                    "OI": current_oi,
+                    "StartOI": start_oi,
+                    "Change": change,
+                    "ChangeAbs": abs(change),
+                    "ATM": abs(strike - atm_strike) < 0.1,
+                    "CompactOI": fmt_bar_value(current_oi),
+                    "CompactStart": fmt_bar_value(start_oi),
+                    "CompactChange": ("+" if change >= 0 else "") + fmt_bar_value(change),
+                })
+        return pd.DataFrame(records)
+
+    def _oi_video_style_chart(chart_df, spot, title, show_oi_change=True):
+        if chart_df.empty:
+            st.info("इस समय OI chart के लिए पर्याप्त strike data उपलब्ध नहीं है।")
+            return
         spec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-            "width": "container", "height": 430,
-            "transform": [
-                {"calculate": ("abs(datum.Value) >= 10000000 ? format(datum.Value/10000000, '.2f') + ' Cr' : abs(datum.Value) >= 100000 ? format(datum.Value/100000, '.2f') + ' L' : abs(datum.Value) >= 1000 ? format(datum.Value/1000, '.2f') + ' K' : format(datum.Value, ',.0f')"), "as": "CompactValue"}
-            ],
+            "width": "container", "height": 410,
+            "data": {"name": "source"},
             "layer": [
                 {
-                    "transform": [
-                        {"joinaggregate": [{"op": "max", "field": "Value", "as": "MaxVal"}, {"op": "min", "field": "Value", "as": "MinVal"}]},
-                        {"calculate": "min(0, datum.MinVal)", "as": "ChartMin"}, {"calculate": "max(0, datum.MaxVal)", "as": "ChartMax"},
-                        {"filter": "datum.Side == 'CALL OI' || datum.Side == 'CALL OI Change'"}
-                    ],
-                    "mark": {"type": "bar", "opacity": 0.12, "tooltip": False},
+                    "mark": {"type": "bar", "size": 24, "cornerRadiusTopLeft": 2, "cornerRadiusTopRight": 2},
                     "encoding": {
-                        "x": {"field": "strike", "type": "ordinal", "title": "Strike Price", "sort": "ascending"},
-                        "y": {"field": "ChartMax", "type": "quantitative"}, "y2": {"field": "ChartMin"},
-                        "color": {"condition": {"test": f"datum.strike <= {atm_strike}", "value": "#22c55e"}, "value": "#ef4444"}
-                    }
-                },
-                {
-                    "mark": {"type": "bar", "cornerRadiusTopLeft": 3, "cornerRadiusTopRight": 3},
-                    "encoding": {
-                        "x": {"field": "strike", "type": "ordinal", "title": "Strike Price", "sort": "ascending"},
+                        "x": {"field": "strike", "type": "ordinal", "sort": "ascending", "axis": {"title": "Strike Price", "labelAngle": -55, "labelFontSize": 10}},
                         "xOffset": {"field": "Side", "type": "nominal"},
-                        "y": {"field": "Value", "type": "quantitative", "title": "Open Interest / OI Change"},
-                        "color": {
-                            "field": "Side", "type": "nominal",
-                            "scale": {"domain": (["CALL OI", "PUT OI"] if oi else ["CALL OI Change", "PUT OI Change"]), "range": ["#22c55e", "#ef4444"]},
-                            "legend": {"title": None, "orient": "top"}
-                        },
+                        "y": {"field": "OI", "type": "quantitative", "title": "Call OI / Put OI", "axis": {"format": ".2s"}},
+                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": {"title": None, "orient": "bottom"}},
                         "tooltip": [
                             {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
-                            {"field": "Side", "type": "nominal", "title": "Type"},
-                            {"field": "CompactValue", "type": "nominal", "title": "Value"}
+                            {"field": "Side", "type": "nominal", "title": "Side"},
+                            {"field": "CompactOI", "type": "nominal", "title": "Current OI"},
+                            {"field": "CompactStart", "type": "nominal", "title": "Start OI"},
+                            {"field": "CompactChange", "type": "nominal", "title": "OI Change"}
                         ]
                     }
                 }
             ]
         }
-        st.vega_lite_chart(long_df, spec={**spec, "data": {"name": "source"}}, use_container_width=True)
-
+        if show_oi_change:
+            # A second, outlined bar visually mimics the reference's increase/decrease layer.
+            spec["layer"].append({
+                "mark": {"type": "bar", "size": 17, "fillOpacity": 0.18, "strokeWidth": 1.6},
+                "encoding": {
+                    "x": {"field": "strike", "type": "ordinal", "sort": "ascending"},
+                    "xOffset": {"field": "Side", "type": "nominal"},
+                    "y": {"field": "Change", "type": "quantitative", "title": "OI Change"},
+                    "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": None},
+                    "stroke": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": None},
+                    "tooltip": [
+                        {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
+                        {"field": "Side", "type": "nominal", "title": "Side"},
+                        {"field": "CompactChange", "type": "nominal", "title": "OI Change"}
+                    ]
+                }
+            })
+        # ATM marker
         if spot is not None:
-            s1, s2 = st.columns(2)
-            s1.metric("🟢 LIVE ATM SPOT", fmt_price(spot))
-            s2.metric("🟢 ATM STRIKE", f"{atm_strike:.0f}")
+            atm = float(chart_df.iloc[(chart_df["strike"] - float(spot)).abs().argmin()]["strike"])
+            spec["layer"].append({
+                "data": {"values": [{"atm": atm}]},
+                "mark": {"type": "rule", "strokeDash": [5, 4], "strokeWidth": 1.5, "color": "#374151"},
+                "encoding": {"x": {"field": "atm", "type": "ordinal"}}
+            })
+        st.vega_lite_chart(chart_df, spec=spec, use_container_width=True)
 
-        if show_oi_change and oi:
-            ch = temp.set_index("strike")[["ce_oich", "pe_oich"]].copy()
-            ch.columns = ["CALL OI Change", "PUT OI Change"]
-            st.caption("OI Change — K / L / Cr format:")
-            ch_display = ch.copy()
-            for col in ch_display.columns:
-                ch_display[col] = ch_display[col].map(lambda x: ("+" if float(x) >= 0 else "") + fmt_bar_value(x))
-            
-            def style_mini_chain(row):
-                styles = [''] * len(row)
-                strike = float(row.name)
-                for i, col in enumerate(row.index):
-                    if 'CALL' in col and strike <= atm_strike: styles[i] = 'background-color: rgba(34, 197, 94, 0.15)'
-                    elif 'PUT' in col and strike >= atm_strike: styles[i] = 'background-color: rgba(239, 68, 68, 0.15)'
-                return styles
-                
-            st.dataframe(ch_display.style.apply(style_mini_chain, axis=1), use_container_width=True, height=min(360, 45 + len(ch_display) * 35))
+    def oi_visual_dashboard(df, spot, index_name):
+        """Only the two requested visual modules: OI Change and Open Interest."""
+        if df.empty or spot is None:
+            return
+
+        hist = list(st.session_state.get("oi_history", deque()))
+        if not hist:
+            st.info("OI visual data के लिए snapshot history अभी बन रही है।")
+            return
+        hist.sort(key=lambda x: x[0])
+        min_ts, max_ts = hist[0][0], hist[-1][0]
+        max_dt = datetime.fromtimestamp(max_ts)
+        min_dt = datetime.fromtimestamp(min_ts)
+
+        tab_change, tab_oi = st.tabs(["📊 OI Change", "📈 Open Interest"])
+
+        def common_controls(prefix):
+            c1, c2, c3 = st.columns([1.1, 1.1, 1.2])
+            with c1:
+                mode = st.radio("Range", ["Intraday", "Custom Range"], horizontal=True, key=f"{prefix}_range_mode")
+            with c2:
+                steps = [5, 10, 15, 30, 60, 120, 180]
+                labels = ["Last 5 mins", "Last 10 mins", "Last 15 mins", "Last 30 mins", "Last 1 Hr", "Last 2 Hrs", "Last 3 Hrs"]
+                choice = st.selectbox("Time Window", labels + ["Full Day"], index=7 if prefix == "oichange" else 3, key=f"{prefix}_window")
+            with c3:
+                show_change = st.toggle("Show OI Change", value=True, key=f"{prefix}_show_change")
+            if mode == "Custom Range" and max_ts > min_ts:
+                chosen = st.slider(
+                    "Time Range",
+                    min_value=min_dt, max_value=max_dt,
+                    value=(min_dt, max_dt), format="hh:mm a",
+                    key=f"{prefix}_time_slider"
+                )
+                return None, chosen[0].timestamp(), chosen[1].timestamp(), show_change
+            if choice == "Full Day":
+                return None, min_ts, max_ts, show_change
+            mins = steps[(labels + ["Full Day"]).index(choice)]
+            return mins, max_ts - mins * 60, max_ts, show_change
+
+        def strike_controls(prefix):
+            c1, c2, c3 = st.columns([1.1, 1.1, 1.8])
+            with c1:
+                min_default = float(df["strike"].min())
+                min_strike = st.number_input("Min Strike", value=min_default, step=50.0, key=f"{prefix}_min_strike")
+            with c2:
+                max_default = float(df["strike"].max())
+                max_strike = st.number_input("Max Strike", value=max_default, step=50.0, key=f"{prefix}_max_strike")
+            with c3:
+                levels = st.radio("Strikes above/below ATM", ["Show All", 5, 10, 15, 20, 25], index=2, horizontal=True, key=f"{prefix}_atm_range")
+            if levels != "Show All":
+                atm = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
+                step = 50 if len(df) < 2 else float(np.median(np.diff(sorted(df["strike"].astype(float).unique()))))
+                min_strike = max(min_strike, atm - float(levels) * step)
+                max_strike = min(max_strike, atm + float(levels) * step)
+            return min_strike, max_strike
+
+        with tab_change:
+            st.markdown(f"### OI Change on {datetime.fromtimestamp(max_ts).strftime('%d %b')} <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>", unsafe_allow_html=True)
+            window, start_ts, end_ts, show_change = common_controls("oichange")
+            min_strike, max_strike = strike_controls("oichange")
+            start_snap = None; end_snap = None
+            hist_sorted = sorted(hist, key=lambda x: x[0])
+            for ts, snap in hist_sorted:
+                if ts <= start_ts: start_snap = snap
+                if ts <= end_ts: end_snap = snap
+            if start_snap is None: start_snap = hist_sorted[0][1]
+            if end_snap is None: end_snap = hist_sorted[-1][1]
+            atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
+            chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
+            _oi_video_style_chart(chart_df, spot, "OI Change", show_change)
+            total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
+            total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("CALL OI Change", fmt_bar_value(total_call))
+            m2.metric("PUT OI Change", fmt_bar_value(total_put))
+            m3.metric("NIFTY at Start", fmt_price(spot))
+            m4.metric("NIFTY Current", fmt_price(spot))
+            st.caption(f"{datetime.fromtimestamp(start_ts).strftime('%I:%M %p')} → {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • Current FYERS snapshot के आधार पर")
+
+        with tab_oi:
+            st.markdown(f"### Open Interest on {datetime.fromtimestamp(max_ts).strftime('%d %b')} <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>", unsafe_allow_html=True)
+            window, start_ts, end_ts, show_change = common_controls("oi")
+            min_strike, max_strike = strike_controls("oi")
+            hist_sorted = sorted(hist, key=lambda x: x[0])
+            end_snap = hist_sorted[-1][1]
+            # For OI, use the selected start only for the optional change overlay.
+            start_snap = None
+            for ts, snap in hist_sorted:
+                if ts <= start_ts: start_snap = snap
+            if start_snap is None: start_snap = hist_sorted[0][1]
+            atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
+            chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
+            _oi_video_style_chart(chart_df, spot, "Open Interest", show_change)
+            total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "OI"].sum()) if not chart_df.empty else 0
+            total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "OI"].sum()) if not chart_df.empty else 0
+            call_change = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
+            put_change = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("TOTAL CALL OI", fmt_bar_value(total_call))
+            m2.metric("TOTAL PUT OI", fmt_bar_value(total_put))
+            m3.metric("PCR", f"{(total_put / total_call if total_call else 0):.2f}")
+            m4.metric("OI Change", f"{fmt_bar_value(call_change + put_change)}")
+            st.caption(f"OI snapshot: {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • Change baseline: {datetime.fromtimestamp(start_ts).strftime('%I:%M %p')}")
 
     # TOP HEADER (Mobile, Tablet & Desktop Friendly)
     head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
@@ -1004,6 +1169,10 @@ def main_trading_dashboard():
             st.session_state.data_symbol = symbol
             st.session_state.data_source = "CACHED"
             st.session_state.cached_at = cached.get("saved_at_text")
+            restore_snapshot_history(cached.get("oi_history", []))
+            # If an older cache has no history, seed it with the current cached snapshot.
+            if not st.session_state.oi_history and cached.get("rows"):
+                st.session_state.oi_history.append((float(cached.get("saved_at", time.time())), take_snapshot(cached.get("rows", []))))
 
     # During market hours, keep polling FYERS for fresh data. Outside market
     # hours we first use the persistent cache, but if no cache exists (for
@@ -1026,8 +1195,11 @@ def main_trading_dashboard():
                 st.session_state.data_source = "LIVE" if market_open else "LAST_FYERS"
                 st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                 st.session_state.data_symbol = symbol
-                add_snapshot(rows)
-                save_market_cache(symbol, spot, rows, meta, hist_resp)
+                snapshot_added = add_snapshot(rows)
+                # Save the cache when the OI history advances, and also on the first
+                # successful fetch so closed-market fallback always has a snapshot.
+                if snapshot_added or st.session_state.data_source != "LIVE":
+                    save_market_cache(symbol, spot, rows, meta, hist_resp)
         except Exception:
             st.session_state.last_fetch = now
 
@@ -1124,8 +1296,8 @@ def main_trading_dashboard():
     st.subheader("🕯️ High-Level Price Chart")
     candle_chart(st.session_state.live_history, spot)
 
-    double_bar(df, oi=True, spot=spot, show_oi_change=show_bar_oichange)
-    double_bar(df, oi=False, spot=spot, show_oi_change=True)
+    # ONLY TWO REQUESTED VISUAL MODULES — OI Change + Open Interest
+    oi_visual_dashboard(df, spot, index_name)
 
     st.subheader("🔗 LIVE OPTION CHAIN (PRICE + VOLUME + OI + OI CHANGE + DELTA & THETA)")
     atm_strike = float(df["strike"].iloc[(df["strike"] - spot).abs().argmin()])
