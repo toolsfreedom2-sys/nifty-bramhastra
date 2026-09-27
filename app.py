@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 """
 NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
@@ -1524,75 +1524,133 @@ def main_trading_dashboard():
     else:
         st.info("⏳ 4-factor confirmation के लिए कम से कम 15 मिनट की historical snapshot data चाहिए।")
 
-    # SUPPORT / RESISTANCE 50-POINT ALERT
+    # -----------------------------------------------------------------
+    # ALERTS — KEEP S/R ALERT SEPARATE FROM THE 50-POINT SWING ENGINE
+    # -----------------------------------------------------------------
+    # 1) MARKET STATUS: informational only; it does not itself create an alert.
+    status_bg = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "SIDEWAYS": "#eab308", "LOADING": "#64748b"}.get(trend, "#64748b")
+    status_fg = "white" if trend != "SIDEWAYS" else "#422006"
+    st.markdown(
+        f"<div style='border:2px solid {status_bg};border-radius:14px;padding:12px 18px;margin:8px 0 12px;background:rgba(148,163,184,.07);'>"
+        f"<div style='font-size:20px;font-weight:800;'>📊 MARKET STATUS</div>"
+        f"<div style='font-size:18px;font-weight:800;color:{status_bg};'>TREND: {trend}</div>"
+        f"<div style='font-size:17px;font-weight:700;'>SCORE: {score:+.2f}</div></div>",
+        unsafe_allow_html=True
+    )
+
+    # 2) EXISTING S/R ALERT — intentionally independent of the swing setup.
     alert_html = ""
     if spot and support and resistance:
         if abs(spot - support) <= 15 and score >= -0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🚀 S/R BUY ALERT: Support ({support:.0f}) के पास! Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</div>"
+            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🟢 S/R BUY ALERT<br><span style='font-size:15px;'>Support के पास | Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</span></div>"
         elif abs(spot - resistance) <= 15 and score <= 0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>⚠️ S/R SELL ALERT: Resistance ({resistance:.0f}) के पास! Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</div>"
-    if alert_html: st.markdown(alert_html, unsafe_allow_html=True)
+            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>🔴 S/R SELL ALERT<br><span style='font-size:15px;'>Resistance के पास | Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</span></div>"
+    if alert_html:
+        st.markdown(alert_html, unsafe_allow_html=True)
 
-    # SWING HIGH / LOW FAST SCALP ALERT (EXISTING FEATURE)
+    # 3) 50-POINT SWING SETUP + ACTUAL SWING ENTRY ALERT
+    #    IMPORTANT: the setup itself NEVER becomes a BUY/SELL alert.
+    #    A Swing BUY/SELL alert is shown only after all entry conditions match.
     swing_low, swing_high = get_swing_levels(st.session_state.live_history)
-    swing_alert_html = ""
-    if spot and swing_low and swing_high:
-        if abs(spot - swing_low) <= 15 and score >= -0.05:
-            swing_alert_html = f"<div class='blinking-alert' style='background-color:#e0f2fe; color:#0369a1; border-color:#0284c7;'>⚡ SWING BUY ALERT (Fast Scalp): Local Swing Low ({swing_low:.0f}) के पास! Entry: {swing_low:.0f} | Target: {swing_low+50:.0f} | SL: {swing_low-15:.0f}</div>"
-        elif abs(spot - swing_high) <= 15 and score <= 0.05:
-            swing_alert_html = f"<div class='blinking-alert' style='background-color:#fef3c7; color:#92400e; border-color:#f59e0b;'>⚡ SWING SELL ALERT (Fast Scalp): Local Swing High ({swing_high:.0f}) के पास! Entry: {swing_high:.0f} | Target: {swing_high-50:.0f} | SL: {swing_high+15:.0f}</div>"
-    if swing_alert_html: st.markdown(swing_alert_html, unsafe_allow_html=True)
+    swing_setup_html = ""
+    swing_entry_alert_html = ""
 
-    # SWING 50-POINT OPPORTUNITY INSIDE SUPPORT / RESISTANCE ZONE (NEW FEATURE)
-    # This is intentionally separate from the two existing alerts above. It only
-    # activates when BOTH swing points sit inside the current S/R zone and the
-    # distance between them is at least 50 points.
-    swing_zone_alert_html = ""
     if (spot is not None and support is not None and resistance is not None
             and swing_low is not None and swing_high is not None):
         zone_low = min(float(support), float(resistance))
         zone_high = max(float(support), float(resistance))
         swing_range = float(swing_high) - float(swing_low)
-        swings_inside_zone = (zone_low <= float(swing_low)
-                              and float(swing_high) <= zone_high
-                              and float(swing_low) < float(swing_high))
+        swings_inside_zone = (
+            zone_low <= float(swing_low)
+            and float(swing_high) <= zone_high
+            and float(swing_low) < float(swing_high)
+        )
 
-        if swings_inside_zone and swing_range >= 50:
-            swing_buy_entry = float(swing_low)
-            swing_buy_exit = float(swing_high)
-            swing_sell_entry = float(swing_high)
-            swing_sell_exit = float(swing_low)
+        if swing_range < 50:
+            swing_setup_html = (
+                f"<div style='border:2px solid #94a3b8;border-radius:12px;padding:14px;margin:8px 0;"
+                f"background:rgba(148,163,184,.08);'>"
+                f"<div style='font-size:18px;font-weight:800;'>⚪ NO 50-POINT SETUP</div>"
+                f"<div>Swing Range: <b>{swing_range:.0f} Points</b></div>"
+                f"<div>Required: <b>50+ Points</b></div></div>"
+            )
+        elif not swings_inside_zone:
+            swing_setup_html = (
+                f"<div style='border:2px solid #94a3b8;border-radius:12px;padding:14px;margin:8px 0;"
+                f"background:rgba(148,163,184,.08);'>"
+                f"<div style='font-size:18px;font-weight:800;'>⚪ NO 50-POINT SETUP</div>"
+                f"<div>Swing Range: <b>{swing_range:.0f} Points</b></div>"
+                f"<div>Required: <b>50+ Points</b> + both swing points inside S/R zone</div></div>"
+            )
+        else:
+            setup_valid = swing_range >= 50 and swings_inside_zone
+            zone_status = "INSIDE S/R"
+            setup_status = "🟢 VALID SETUP" if setup_valid else "⚪ NO VALID SETUP"
+            swing_setup_html = (
+                f"<div style='border:2px solid #16a34a;border-radius:12px;padding:14px;margin:8px 0;"
+                f"background:rgba(22,163,74,.06);'>"
+                f"<div style='font-size:19px;font-weight:800;'>⚡ SWING OPPORTUNITY SETUP</div>"
+                f"<div style='margin-top:6px;'><b>S/R ZONE</b></div>"
+                f"<div>Support&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{support:.0f}</b></div>"
+                f"<div>Resistance&nbsp;&nbsp;&nbsp; <b>{resistance:.0f}</b></div>"
+                f"<div style='margin-top:6px;'><b>SWING RANGE</b></div>"
+                f"<div>Swing Low&nbsp;&nbsp;&nbsp;&nbsp; <b>{swing_low:.0f}</b></div>"
+                f"<div>Swing High&nbsp;&nbsp;&nbsp; <b>{swing_high:.0f}</b></div>"
+                f"<div>Range&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{swing_range:.0f} Points ✅</b></div>"
+                f"<div style='margin-top:6px;'>Zone Status&nbsp;&nbsp; <b>✅ {zone_status}</b></div>"
+                f"<div>Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{trend}</b></div>"
+                f"<div>Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{score:+.2f}</b></div>"
+                f"<div style='margin-top:6px;'>SETUP STATUS&nbsp; <b>{setup_status}</b></div>"
+                f"</div>"
+            )
 
-            # Alert at the lower swing when price is approaching the buy entry.
-            if abs(float(spot) - swing_buy_entry) <= 15 and score >= -0.05:
-                swing_zone_alert_html = (
-                    f"<div class='blinking-alert' style='background-color:#ecfdf5; color:#065f46; border-color:#10b981;'>"
-                    f"🎯 SWING 50-POINT BUY ALERT: S/R Zone के अंदर Swing Low → Swing High opportunity मिली! "
-                    f"Entry Price: {swing_buy_entry:.0f} | Exit Price: {swing_buy_exit:.0f} | "
-                    f"Potential Move: +{swing_range:.0f} Points | SL: {swing_buy_entry-15:.0f}"
-                    f"</div>"
+            # ACTUAL SWING ENTRY CONDITIONS:
+            # BUY = valid 50+ setup + bullish trend + positive score + spot near Swing Low.
+            # SELL = valid 50+ setup + bearish trend + negative score + spot near Swing High.
+            swing_buy_condition = (
+                setup_valid
+                and trend == "BULLISH"
+                and score > 0
+                and abs(float(spot) - float(swing_low)) <= 15
+            )
+            swing_sell_condition = (
+                setup_valid
+                and trend == "BEARISH"
+                and score < 0
+                and abs(float(spot) - float(swing_high)) <= 15
+            )
+
+            if swing_buy_condition:
+                swing_entry_alert_html = (
+                    f"<div class='blinking-alert' style='background-color:#dcfce7;color:#166534;border-color:#16a34a;'>"
+                    f"🚨 SWING BUY ALERT"
+                    f"<div style='font-size:15px;margin-top:6px;text-align:left;'>"
+                    f"Entry Price : <b>{swing_low:.0f}</b><br>"
+                    f"Exit Price&nbsp;&nbsp; : <b>{swing_high:.0f}</b><br>"
+                    f"Potential&nbsp;&nbsp; : <b>+{swing_range:.0f} Points</b><br><br>"
+                    f"Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{trend}</b><br>"
+                    f"Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{score:+.2f}</b><br><br>"
+                    f"Status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>🟢 ENTRY CONDITION MET</b>"
+                    f"</div></div>"
                 )
-            # Alert at the upper swing when price is approaching the sell entry.
-            elif abs(float(spot) - swing_sell_entry) <= 15 and score <= 0.05:
-                swing_zone_alert_html = (
-                    f"<div class='blinking-alert' style='background-color:#fff7ed; color:#9a3412; border-color:#f97316;'>"
-                    f"🎯 SWING 50-POINT SELL ALERT: S/R Zone के अंदर Swing High → Swing Low opportunity मिली! "
-                    f"Entry Price: {swing_sell_entry:.0f} | Exit Price: {swing_sell_exit:.0f} | "
-                    f"Potential Move: -{swing_range:.0f} Points | SL: {swing_sell_entry+15:.0f}"
-                    f"</div>"
+            elif swing_sell_condition:
+                swing_entry_alert_html = (
+                    f"<div class='blinking-alert' style='background-color:#fee2e2;color:#991b1b;border-color:#dc2626;'>"
+                    f"🚨 SWING SELL ALERT"
+                    f"<div style='font-size:15px;margin-top:6px;text-align:left;'>"
+                    f"Entry Price : <b>{swing_high:.0f}</b><br>"
+                    f"Exit Price&nbsp;&nbsp; : <b>{swing_low:.0f}</b><br>"
+                    f"Potential&nbsp;&nbsp; : <b>+{swing_range:.0f} Points</b><br><br>"
+                    f"Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{trend}</b><br>"
+                    f"Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{score:+.2f}</b><br><br>"
+                    f"Status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>🔴 ENTRY CONDITION MET</b>"
+                    f"</div></div>"
                 )
-            # When the 50+ point range exists but spot is not yet near an entry,
-            # show a non-entry watch alert so the user knows the setup exists.
-            elif zone_low <= float(spot) <= zone_high:
-                swing_zone_alert_html = (
-                    f"<div class='blinking-alert' style='background-color:#eff6ff; color:#1e40af; border-color:#3b82f6;'>"
-                    f"📌 SWING 50-POINT SETUP FOUND: S/R Zone के अंदर Swing Low {swing_buy_entry:.0f} ↔ Swing High {swing_buy_exit:.0f} "
-                    f"| Range: {swing_range:.0f} Points | Buy Entry: {swing_buy_entry:.0f} → Exit: {swing_buy_exit:.0f} "
-                    f"| Sell Entry: {swing_sell_entry:.0f} → Exit: {swing_sell_exit:.0f}"
-                    f"</div>"
-                )
-    if swing_zone_alert_html:
-        st.markdown(swing_zone_alert_html, unsafe_allow_html=True)
+
+    if swing_setup_html:
+        st.markdown(swing_setup_html, unsafe_allow_html=True)
+    if swing_entry_alert_html:
+        st.markdown(swing_entry_alert_html, unsafe_allow_html=True)
 
     # METRICS ROW — hover explains exactly what each number means
     a, b, c, d, e, f = st.columns(6)
