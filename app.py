@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 """
 NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
@@ -975,12 +975,40 @@ def main_trading_dashboard():
         return pd.DataFrame(records)
 
     def _oi_video_style_chart(chart_df, spot, title, show_oi_change=True):
+        """Render the two requested OI visuals with working labels and a combined strike tooltip."""
         if chart_df.empty:
             st.info("इस समय OI chart के लिए पर्याप्त strike data उपलब्ध नहीं है।")
             return
+
+        # One row per strike for a combined Call + Put tooltip.
+        combined = []
+        for strike, g in chart_df.groupby("strike", sort=True):
+            call = g[g["Side"] == "CALL"]
+            put = g[g["Side"] == "PUT"]
+            c = call.iloc[0] if not call.empty else None
+            q = put.iloc[0] if not put.empty else None
+            combined.append({
+                "strike": float(strike),
+                "Call OI": float(c["OI"]) if c is not None else 0,
+                "Put OI": float(q["OI"]) if q is not None else 0,
+                "Call Start OI": float(c["StartOI"]) if c is not None else 0,
+                "Put Start OI": float(q["StartOI"]) if q is not None else 0,
+                "Call OI Change": float(c["Change"]) if c is not None else 0,
+                "Put OI Change": float(q["Change"]) if q is not None else 0,
+                "Call OI Text": c["CompactOI"] if c is not None else "0",
+                "Put OI Text": q["CompactOI"] if q is not None else "0",
+                "Call Change Text": c["CompactChange"] if c is not None else "0",
+                "Put Change Text": q["CompactChange"] if q is not None else "0",
+                "Hover Y": max(float(c["OI"]) if c is not None else 0, float(q["OI"]) if q is not None else 0),
+            })
+        combined_df = pd.DataFrame(combined)
+
+        call_color = "#d95768"
+        put_color = "#62db6a"
         spec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-            "width": "container", "height": 410,
+            "width": "container",
+            "height": 430,
             "data": {"name": "source"},
             "layer": [
                 {
@@ -988,8 +1016,8 @@ def main_trading_dashboard():
                     "encoding": {
                         "x": {"field": "strike", "type": "ordinal", "sort": "ascending", "axis": {"title": "Strike Price", "labelAngle": -55, "labelFontSize": 10}},
                         "xOffset": {"field": "Side", "type": "nominal"},
-                        "y": {"field": "OI", "type": "quantitative", "title": "Call OI / Put OI", "axis": {"format": ".2s"}},
-                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": {"title": None, "orient": "bottom"}},
+                        "y": {"field": "OI", "type": "quantitative", "title": "Open Interest", "axis": {"format": ".2s"}},
+                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": [put_color, call_color]}, "legend": {"title": None, "orient": "bottom"}},
                         "tooltip": [
                             {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
                             {"field": "Side", "type": "nominal", "title": "Side"},
@@ -1001,24 +1029,43 @@ def main_trading_dashboard():
                 }
             ]
         }
+
+        # Show OI Change as a readable number ABOVE each OI bar, not as a second
+        # independent bar with a different scale.
         if show_oi_change:
-            # A second, outlined bar visually mimics the reference's increase/decrease layer.
             spec["layer"].append({
-                "mark": {"type": "bar", "size": 17, "fillOpacity": 0.18, "strokeWidth": 1.6},
+                "mark": {"type": "text", "dy": -9, "fontSize": 10, "fontWeight": 700},
                 "encoding": {
                     "x": {"field": "strike", "type": "ordinal", "sort": "ascending"},
                     "xOffset": {"field": "Side", "type": "nominal"},
-                    "y": {"field": "Change", "type": "quantitative", "title": "OI Change"},
-                    "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": None},
-                    "stroke": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": None},
-                    "tooltip": [
-                        {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
-                        {"field": "Side", "type": "nominal", "title": "Side"},
-                        {"field": "CompactChange", "type": "nominal", "title": "OI Change"}
-                    ]
+                    "y": {"field": "OI", "type": "quantitative"},
+                    "text": {"field": "CompactChange", "type": "nominal"},
+                    "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": [put_color, call_color]}, "legend": None}
                 }
             })
-        # ATM marker
+
+        # Invisible/near-invisible strike-level hit target. Hovering a strike now
+        # gives BOTH Call and Put values in one popup, matching the requested UI.
+        spec["layer"].append({
+            "data": {"values": combined_df.to_dict("records")},
+            "mark": {"type": "rect", "opacity": 0.001},
+            "encoding": {
+                "x": {"field": "strike", "type": "ordinal", "sort": "ascending"},
+                "y": {"datum": 0, "type": "quantitative"},
+                "y2": {"field": "Hover Y"},
+                "tooltip": [
+                    {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
+                    {"field": "Call OI Text", "type": "nominal", "title": "CALL OI"},
+                    {"field": "Put OI Text", "type": "nominal", "title": "PUT OI"},
+                    {"field": "Call Change Text", "type": "nominal", "title": "CALL OI Change"},
+                    {"field": "Put Change Text", "type": "nominal", "title": "PUT OI Change"},
+                    {"field": "Call Start OI", "type": "quantitative", "title": "CALL Start OI", "format": ".2s"},
+                    {"field": "Put Start OI", "type": "quantitative", "title": "PUT Start OI", "format": ".2s"}
+                ]
+            }
+        })
+
+        # ATM marker.
         if spot is not None:
             atm = float(chart_df.iloc[(chart_df["strike"] - float(spot)).abs().argmin()]["strike"])
             spec["layer"].append({
@@ -1026,10 +1073,15 @@ def main_trading_dashboard():
                 "mark": {"type": "rule", "strokeDash": [5, 4], "strokeWidth": 1.5, "color": "#374151"},
                 "encoding": {"x": {"field": "atm", "type": "ordinal"}}
             })
-        st.vega_lite_chart(chart_df, spec=spec, use_container_width=True)
+
+        st.vega_lite_chart(
+            chart_df,
+            spec=spec,
+            use_container_width=True,
+        )
 
     def oi_visual_dashboard(df, spot, index_name):
-        """Only the two requested visual modules: OI Change and Open Interest."""
+        """Only the two requested visual modules: Open Interest and OI Change."""
         if df.empty or spot is None:
             return
 
@@ -1039,88 +1091,113 @@ def main_trading_dashboard():
             return
         hist.sort(key=lambda x: x[0])
         min_ts, max_ts = hist[0][0], hist[-1][0]
-        max_dt = datetime.fromtimestamp(max_ts)
-        min_dt = datetime.fromtimestamp(min_ts)
 
-        tab_change, tab_oi = st.tabs(["📊 OI Change", "📈 Open Interest"])
+        # The history is intentionally retained for several hours so every
+        # requested time window can actually change the baseline.
+        available_minutes = max(0, int((max_ts - min_ts) / 60))
 
-        def common_controls(prefix):
-            c1, c2, c3 = st.columns([1.1, 1.1, 1.2])
+        tab_oi, tab_change = st.tabs(["📈 Open Interest", "📊 OI Change"])
+
+        def common_controls(prefix, default_window="Last 15 mins"):
+            c1, c2, c3 = st.columns([1.0, 1.35, 1.15])
             with c1:
                 mode = st.radio("Range", ["Intraday", "Custom Range"], horizontal=True, key=f"{prefix}_range_mode")
             with c2:
-                steps = [5, 10, 15, 30, 60, 120, 180]
-                labels = ["Last 5 mins", "Last 10 mins", "Last 15 mins", "Last 30 mins", "Last 1 Hr", "Last 2 Hrs", "Last 3 Hrs"]
-                choice = st.selectbox("Time Window", labels + ["Full Day"], index=7 if prefix == "oichange" else 3, key=f"{prefix}_window")
+                window_options = [
+                    ("Last 5 mins", 5), ("Last 10 mins", 10), ("Last 15 mins", 15),
+                    ("Last 30 mins", 30), ("Last 1 Hr", 60), ("Last 2 Hrs", 120),
+                    ("Last 3 Hrs", 180), ("Full Day", None)
+                ]
+                labels = [x[0] for x in window_options]
+                default_idx = labels.index(default_window) if default_window in labels else 2
+                choice = st.selectbox("Time Window", labels, index=default_idx, key=f"{prefix}_window")
             with c3:
-                show_change = st.toggle("Show OI Change", value=True, key=f"{prefix}_show_change")
+                show_change = st.checkbox("Show OI Change", value=True, key=f"{prefix}_show_change")
+
             if mode == "Custom Range" and max_ts > min_ts:
                 chosen = st.slider(
                     "Time Range",
-                    min_value=min_dt, max_value=max_dt,
-                    value=(min_dt, max_dt), format="hh:mm a",
+                    min_value=datetime.fromtimestamp(min_ts),
+                    max_value=datetime.fromtimestamp(max_ts),
+                    value=(datetime.fromtimestamp(min_ts), datetime.fromtimestamp(max_ts)),
+                    format="HH:mm",
                     key=f"{prefix}_time_slider"
                 )
-                return None, chosen[0].timestamp(), chosen[1].timestamp(), show_change
-            if choice == "Full Day":
-                return None, min_ts, max_ts, show_change
-            mins = steps[(labels + ["Full Day"]).index(choice)]
-            return mins, max_ts - mins * 60, max_ts, show_change
+                return chosen[0].timestamp(), chosen[1].timestamp(), show_change
+
+            selected_minutes = dict(window_options)[choice]
+            if selected_minutes is None:
+                start_ts = min_ts
+            else:
+                target = max_ts - selected_minutes * 60
+                # Choose the snapshot at or immediately before the target.
+                candidates = [ts for ts, _ in hist if ts <= target]
+                start_ts = candidates[-1] if candidates else min_ts
+            return start_ts, max_ts, show_change
 
         def strike_controls(prefix):
-            c1, c2, c3 = st.columns([1.1, 1.1, 1.8])
+            c1, c2 = st.columns([1.05, 2.5])
             with c1:
-                min_default = float(df["strike"].min())
-                min_strike = st.number_input("Min Strike", value=min_default, step=50.0, key=f"{prefix}_min_strike")
+                levels = st.radio(
+                    "Strikes above/below ATM",
+                    [5, 10, 15, 20, 25, "Show All"],
+                    index=1,
+                    horizontal=True,
+                    key=f"{prefix}_atm_range"
+                )
             with c2:
-                max_default = float(df["strike"].max())
-                max_strike = st.number_input("Max Strike", value=max_default, step=50.0, key=f"{prefix}_max_strike")
-            with c3:
-                levels = st.radio("Strikes above/below ATM", ["Show All", 5, 10, 15, 20, 25], index=2, horizontal=True, key=f"{prefix}_atm_range")
-            if levels != "Show All":
-                atm = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
-                step = 50 if len(df) < 2 else float(np.median(np.diff(sorted(df["strike"].astype(float).unique()))))
-                min_strike = max(min_strike, atm - float(levels) * step)
-                max_strike = min(max_strike, atm + float(levels) * step)
+                st.caption("25 strikes तक का data उपलब्ध है; ATM range चुनने पर chart उसी के अनुसार बदलेगा।")
+
+            atm = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
+            unique_strikes = sorted(df["strike"].astype(float).unique())
+            if len(unique_strikes) >= 2:
+                step = float(np.median(np.diff(unique_strikes)))
+            else:
+                step = 50.0
+
+            if levels == "Show All":
+                min_strike = min(unique_strikes)
+                max_strike = max(unique_strikes)
+            else:
+                # Filter by the actual number of strikes on each side, rather
+                # than using an approximate price range. This makes 15/20/25
+                # work even if strike spacing changes.
+                n = int(levels)
+                below = [x for x in unique_strikes if x < atm][-n:]
+                above = [x for x in unique_strikes if x > atm][:n]
+                selected = sorted(set(below + [atm] + above))
+                if selected:
+                    min_strike, max_strike = min(selected), max(selected)
+                else:
+                    min_strike, max_strike = atm - n * step, atm + n * step
             return min_strike, max_strike
 
-        with tab_change:
-            st.markdown(f"### OI Change on {datetime.fromtimestamp(max_ts).strftime('%d %b')} <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>", unsafe_allow_html=True)
-            window, start_ts, end_ts, show_change = common_controls("oichange")
-            min_strike, max_strike = strike_controls("oichange")
-            start_snap = None; end_snap = None
+        def get_snapshots(start_ts, end_ts):
             hist_sorted = sorted(hist, key=lambda x: x[0])
-            for ts, snap in hist_sorted:
-                if ts <= start_ts: start_snap = snap
-                if ts <= end_ts: end_snap = snap
-            if start_snap is None: start_snap = hist_sorted[0][1]
-            if end_snap is None: end_snap = hist_sorted[-1][1]
-            atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
-            chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
-            _oi_video_style_chart(chart_df, spot, "OI Change", show_change)
-            total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
-            total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("CALL OI Change", fmt_bar_value(total_call))
-            m2.metric("PUT OI Change", fmt_bar_value(total_put))
-            m3.metric("NIFTY at Start", fmt_price(spot))
-            m4.metric("NIFTY Current", fmt_price(spot))
-            st.caption(f"{datetime.fromtimestamp(start_ts).strftime('%I:%M %p')} → {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • Current FYERS snapshot के आधार पर")
-
-        with tab_oi:
-            st.markdown(f"### Open Interest on {datetime.fromtimestamp(max_ts).strftime('%d %b')} <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>", unsafe_allow_html=True)
-            window, start_ts, end_ts, show_change = common_controls("oi")
-            min_strike, max_strike = strike_controls("oi")
-            hist_sorted = sorted(hist, key=lambda x: x[0])
+            start_snap = hist_sorted[0][1]
             end_snap = hist_sorted[-1][1]
-            # For OI, use the selected start only for the optional change overlay.
-            start_snap = None
             for ts, snap in hist_sorted:
-                if ts <= start_ts: start_snap = snap
-            if start_snap is None: start_snap = hist_sorted[0][1]
+                if ts <= start_ts:
+                    start_snap = snap
+                if ts <= end_ts:
+                    end_snap = snap
+                else:
+                    break
+            return start_snap, end_snap
+
+        # OPEN INTEREST FIRST
+        with tab_oi:
+            st.markdown(
+                f"### Open Interest <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>",
+                unsafe_allow_html=True
+            )
+            start_ts, end_ts, show_change = common_controls("oi", "Last 15 mins")
+            min_strike, max_strike = strike_controls("oi")
+            start_snap, end_snap = get_snapshots(start_ts, end_ts)
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
             _oi_video_style_chart(chart_df, spot, "Open Interest", show_change)
+
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "OI"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "OI"].sum()) if not chart_df.empty else 0
             call_change = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
@@ -1129,8 +1206,38 @@ def main_trading_dashboard():
             m1.metric("TOTAL CALL OI", fmt_bar_value(total_call))
             m2.metric("TOTAL PUT OI", fmt_bar_value(total_put))
             m3.metric("PCR", f"{(total_put / total_call if total_call else 0):.2f}")
-            m4.metric("OI Change", f"{fmt_bar_value(call_change + put_change)}")
-            st.caption(f"OI snapshot: {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • Change baseline: {datetime.fromtimestamp(start_ts).strftime('%I:%M %p')}")
+            m4.metric("OI CHANGE", fmt_bar_value(call_change + put_change))
+            st.caption(
+                f"Baseline: {datetime.fromtimestamp(start_ts).strftime('%I:%M %p')} → "
+                f"Current: {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • "
+                f"History available: {available_minutes} min"
+            )
+
+        # OI CHANGE SECOND
+        with tab_change:
+            st.markdown(
+                f"### OI Change <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>",
+                unsafe_allow_html=True
+            )
+            start_ts, end_ts, show_change = common_controls("oichange", "Last 15 mins")
+            min_strike, max_strike = strike_controls("oichange")
+            start_snap, end_snap = get_snapshots(start_ts, end_ts)
+            atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
+            chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
+            _oi_video_style_chart(chart_df, spot, "OI Change", show_change)
+
+            total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
+            total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("CALL OI CHANGE", fmt_bar_value(total_call))
+            m2.metric("PUT OI CHANGE", fmt_bar_value(total_put))
+            m3.metric("NIFTY AT START", fmt_price(spot))
+            m4.metric("NIFTY CURRENT", fmt_price(spot))
+            st.caption(
+                f"Baseline: {datetime.fromtimestamp(start_ts).strftime('%I:%M %p')} → "
+                f"Current: {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • "
+                f"History available: {available_minutes} min"
+            )
 
     # TOP HEADER (Mobile, Tablet & Desktop Friendly)
     head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
@@ -1185,7 +1292,7 @@ def main_trading_dashboard():
 
     if should_fetch or fallback_closed_fetch:
         try:
-            resp = option_chain(api, symbol, strike_count)
+            resp = option_chain(api, symbol, max(int(strike_count), 25))
             spot, rows, meta, err = parse_chain(resp)
             if not err and rows:
                 hist_resp = history(api, symbol)
