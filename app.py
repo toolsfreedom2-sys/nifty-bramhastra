@@ -1022,13 +1022,20 @@ def main_trading_dashboard():
                 f"<b>Raw Details:</b><br>Price: {price:+.2f}%<br>Volume: {vol:+.1f}%<br>OI: {oi:+.2f}%<br>OI Change: {oich:+.0f}")
 
     st.markdown(r'''<style>
-    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:20;}
+    /* Hover popup layering fix: keep the popup above later Streamlit rows/cards. */
+    div[data-testid="stHorizontalBlock"],
+    div[data-testid="column"],
+    div[data-testid="stVerticalBlock"],
+    div[data-testid="stElementContainer"]{overflow:visible!important;}
+    div[data-testid="column"]:has(.metric-hover-wrap){position:relative!important;z-index:100!important;}
+    div[data-testid="column"]:has(.metric-hover-wrap:hover){z-index:999999!important;}
+    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:1000;isolation:isolate;}
     .metric-hover-main{position:relative;z-index:2;}
     .metric-hover-label{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.02em;}
     .metric-hover-value{font-size:22px;font-weight:850;color:#0f172a;margin-top:2px;}
-    .metric-hover-popup{position:absolute;left:0;top:calc(100% + 7px);width:min(430px,calc(100vw - 42px));padding:14px 16px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 18px 45px rgba(15,23,42,.30);font-size:12px;line-height:1.55;opacity:0;visibility:hidden;transform:translateY(-5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;}
+    .metric-hover-popup{position:absolute;left:0;top:calc(100% + 7px);width:min(430px,calc(100vw - 42px));padding:14px 16px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 18px 45px rgba(15,23,42,.30);font-size:12px;line-height:1.55;opacity:0;visibility:hidden;transform:translateY(-5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;z-index:1000000;}
     .metric-hover-wrap:hover{border-color:rgba(59,130,246,.45);box-shadow:0 7px 20px rgba(15,23,42,.10);}
-    .metric-hover-wrap:hover .metric-hover-popup{opacity:1;visibility:visible;transform:translateY(0);}
+    .metric-hover-wrap:hover .metric-hover-popup{opacity:1;visibility:visible;transform:translateY(0);z-index:1000000;}
     .metric-hover-popup b{color:#fff;}
     .ff-hover{min-height:96px;}
     </style>''',unsafe_allow_html=True)
