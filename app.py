@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 """
 NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
@@ -1081,16 +1081,28 @@ def main_trading_dashboard():
         st.line_chart(pd.DataFrame(data).set_index("Time")[["Open", "High", "Low", "Close"]], height=400)
 
     def _oi_chart_history(current_rows, window_minutes):
-        """Return baseline/current snapshots for the selected OI chart window."""
+        """Return a historical baseline and the CURRENT live snapshot.
+
+        The dashboard may rerun every second, but OI history is intentionally
+        sampled about once per minute.  Therefore the chart must never use the
+        last historical sample as its right-hand endpoint: doing that makes the
+        bars look frozen for up to a minute.  The right-hand endpoint is always
+        the current FYERS rows, while the left-hand endpoint comes from the
+        selected historical window.
+        """
         hist = list(st.session_state.get("oi_history", deque()))
         if not hist:
-            return None, None, None, None
+            live_ts = time.time()
+            return live_ts, None, live_ts, take_snapshot(current_rows)
+
         hist.sort(key=lambda x: x[0])
-        end_ts, end_snap = hist[-1]
+        live_ts = time.time()
+        live_snap = take_snapshot(current_rows)
+
         if window_minutes is None:
             start_ts, start_snap = hist[0]
         else:
-            target = end_ts - window_minutes * 60
+            target = live_ts - window_minutes * 60
             chosen = None
             for item in hist:
                 if item[0] <= target:
@@ -1101,7 +1113,8 @@ def main_trading_dashboard():
                 start_ts, start_snap = hist[0]
             else:
                 start_ts, start_snap = chosen
-        return start_ts, start_snap, end_ts, end_snap
+
+        return start_ts, start_snap, live_ts, live_snap
 
     def _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike):
         """Build rows for OI/OI-Change charts.
@@ -1323,17 +1336,19 @@ def main_trading_dashboard():
                 return chosen[0].timestamp(), chosen[1].timestamp(), show_change
 
             selected_minutes = dict(window_options)[choice]
-            # The end of every window is always the latest available snapshot.
-            # If the requested duration is longer than the stored history, use
-            # the oldest available snapshot rather than silently reusing the
-            # current snapshot. This makes the displayed baseline explicit.
+            # The right edge is ALWAYS the current live dashboard time.  The
+            # historical snapshots are used only to locate the selected-window
+            # baseline.  This keeps the OI/OI-Change bars moving with Spot and
+            # the live option chain instead of waiting for the next history
+            # snapshot.
+            live_end_ts = time.time()
             if selected_minutes is None:
                 start_ts = min_ts
             else:
-                target = max_ts - selected_minutes * 60
+                target = live_end_ts - selected_minutes * 60
                 candidates = [ts for ts, _ in hist if ts <= target]
                 start_ts = candidates[-1] if candidates else min_ts
-            return start_ts, max_ts, show_change
+            return start_ts, live_end_ts, show_change
 
         def strike_controls(prefix):
             c1, c2 = st.columns([1.05, 2.5])
@@ -1375,14 +1390,25 @@ def main_trading_dashboard():
         def get_snapshots(start_ts, end_ts):
             hist_sorted = sorted(hist, key=lambda x: x[0])
             start_snap = hist_sorted[0][1]
-            end_snap = hist_sorted[-1][1]
             for ts, snap in hist_sorted:
                 if ts <= start_ts:
                     start_snap = snap
-                if ts <= end_ts:
-                    end_snap = snap
                 else:
                     break
+
+            # For the live/default window, the right edge is the latest FYERS
+            # data, not the last 55-second history snapshot.  This is the key
+            # fix for the frozen OI Change bars seen in the screen recording.
+            now_ts = time.time()
+            if end_ts >= now_ts - 2.0:
+                end_snap = take_snapshot(rows)
+            else:
+                end_snap = hist_sorted[-1][1]
+                for ts, snap in hist_sorted:
+                    if ts <= end_ts:
+                        end_snap = snap
+                    else:
+                        break
             return start_snap, end_snap
 
         # OPEN INTEREST FIRST
@@ -1397,7 +1423,7 @@ def main_trading_dashboard():
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
             _oi_video_style_chart(chart_df, spot, "Open Interest", show_change, metric="OI")
-            st.caption(f"Selected OI baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Bars use the current OI snapshot; labels show the selected-window OI change.")
+            st.caption(f"Selected OI baseline: {datetime.fromtimestamp(start_ts).strftime('%H:%M:%S')} → LIVE {datetime.fromtimestamp(end_ts).strftime('%H:%M:%S')}. Bars use the current FYERS OI snapshot; labels show the selected-window OI change.")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "OI"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "OI"].sum()) if not chart_df.empty else 0
@@ -1426,7 +1452,7 @@ def main_trading_dashboard():
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
             _oi_video_style_chart(chart_df, spot, "OI Change", show_change, metric="CHANGE")
-            st.caption(f"Selected OI Change baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Every bar = current OI − selected-window baseline OI; positive above zero, negative below zero.")
+            st.caption(f"Selected OI Change baseline: {datetime.fromtimestamp(start_ts).strftime('%H:%M:%S')} → LIVE {datetime.fromtimestamp(end_ts).strftime('%H:%M:%S')}. Every bar = current live OI − selected-window baseline OI; positive above zero, negative below zero.")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
