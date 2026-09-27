@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """
 NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
@@ -48,6 +48,8 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 APP_DIR = Path.home() / ".fyers_streamlit_nifty"
 APP_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = APP_DIR / "token.json"
+MARKET_CACHE_DIR = APP_DIR / "market_cache"
+MARKET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 REDIRECT_URI = "https://nifty-bramhastra.streamlit.app/"
 STATE = "nifty_oi_brahmastra"
@@ -184,6 +186,9 @@ if "has_subscription" not in st.session_state: st.session_state.has_subscription
 if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
 if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
+if "data_source" not in st.session_state: st.session_state.data_source = "NONE"
+if "cached_at" not in st.session_state: st.session_state.cached_at = None
+if "data_symbol" not in st.session_state: st.session_state.data_symbol = None
 
 # =====================================================================
 # HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
@@ -587,6 +592,51 @@ def main_trading_dashboard():
 
     api = fyers_client(FYERS_APP_ID, access_token)
 
+    def is_nse_market_open(dt=None):
+        """Approximate NSE cash-market session: Mon-Fri, 09:15-15:30 IST.
+        Exchange holidays are not embedded here; if FYERS returns live data it
+        still takes precedence during the session.
+        """
+        dt = dt or datetime.now()
+        if dt.weekday() >= 5:
+            return False
+        t = dt.time()
+        return t >= datetime.strptime("09:15", "%H:%M").time() and t <= datetime.strptime("15:30", "%H:%M").time()
+
+    def _cache_file(symbol):
+        safe = hashlib.sha256(str(symbol).encode("utf-8")).hexdigest()[:24]
+        return MARKET_CACHE_DIR / f"{safe}.json"
+
+    def save_market_cache(symbol, spot, rows, meta, history_response=None):
+        """Persist the last successful market snapshot so closed-market sessions
+        can continue showing the most recent available data."""
+        try:
+            payload = {
+                "saved_at": time.time(),
+                "saved_at_text": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
+                "symbol": symbol,
+                "spot": spot,
+                "rows": rows,
+                "meta": meta,
+                "history": history_response,
+            }
+            _cache_file(symbol).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    def load_market_cache(symbol):
+        """Load last successful snapshot. Invalid/corrupt cache is ignored."""
+        try:
+            path = _cache_file(symbol)
+            if not path.exists():
+                return None
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or not payload.get("rows"):
+                return None
+            return payload
+        except Exception:
+            return None
+
     def option_chain(api, symbol, strike_count):
         data = {"symbol": symbol, "strikecount": int(strike_count), "greeks": "1"}
         try: return api.optionchain(data=data)
@@ -933,25 +983,63 @@ def main_trading_dashboard():
     st.divider()
 
     now = time.time()
-    if now - st.session_state.last_fetch >= 0.9:
+    market_open = is_nse_market_open()
+
+    # Always recover the latest successful snapshot first. This is what keeps
+    # yesterday/last-session data visible while NSE is closed or FYERS is quiet.
+    # If the user changes index, discard the previous index from the in-memory
+    # view and load that index's own cache instead.
+    if st.session_state.data_symbol != symbol:
+        st.session_state.live_chain = None
+        st.session_state.live_history = None
+        st.session_state.data_source = "NONE"
+        st.session_state.cached_at = None
+        st.session_state.data_symbol = symbol
+
+    if st.session_state.live_chain is None:
+        cached = load_market_cache(symbol)
+        if cached:
+            st.session_state.live_chain = (cached.get("spot"), cached.get("rows", []), cached.get("meta", {}))
+            st.session_state.live_history = cached.get("history")
+            st.session_state.data_symbol = symbol
+            st.session_state.data_source = "CACHED"
+            st.session_state.cached_at = cached.get("saved_at_text")
+
+    # During market hours, keep polling FYERS for fresh data. Outside market
+    # hours we deliberately keep the last successful snapshot on screen.
+    if market_open and now - st.session_state.last_fetch >= 0.9:
         try:
             resp = option_chain(api, symbol, strike_count)
             spot, rows, meta, err = parse_chain(resp)
             if not err and rows:
+                hist_resp = history(api, symbol)
                 st.session_state.live_chain = (spot, rows, meta)
-                st.session_state.live_history = history(api, symbol)
+                st.session_state.live_history = hist_resp
                 st.session_state.last_fetch = now
+                st.session_state.data_source = "LIVE"
+                st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+                st.session_state.data_symbol = symbol
                 add_snapshot(rows)
-            else:
-                if st.session_state.live_chain is None:
-                    st.info("ℹ️ आज मार्केट बंद है या डेटा उपलब्ध नहीं है।")
-        except Exception as e:
+                save_market_cache(symbol, spot, rows, meta, hist_resp)
+        except Exception:
             pass
+    elif not market_open and st.session_state.live_chain is None:
+        # No cached data exists yet. Keep the dashboard honest rather than
+        # fabricating values.
+        st.info("ℹ️ मार्केट अभी बंद है और इस Index का कोई पुराना cached data उपलब्ध नहीं है। Market खुलने पर live data अपने आप आ जाएगा।")
 
-    st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE")
+    st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE / LAST DATA")
     if not st.session_state.live_chain:
-        st.info("डेटा लोड हो रहा है, कृपया प्रतीक्षा करें...")
+        st.info("डेटा उपलब्ध होने की प्रतीक्षा करें...")
         return
+
+    # Clear source/status banner so the user can immediately distinguish live
+    # data from the last available market snapshot.
+    if st.session_state.data_source == "LIVE" and market_open:
+        st.success("🟢 LIVE MARKET DATA — FYERS से वर्तमान data आ रहा है।")
+    else:
+        cache_text = st.session_state.cached_at or "पिछला उपलब्ध snapshot"
+        st.info(f"🔵 MARKET CLOSED / LAST AVAILABLE DATA — अभी live market data नहीं है। नीचे दिख रहा data अंतिम उपलब्ध snapshot है: {cache_text}. Market खुलते ही dashboard live data पर अपने आप switch होगा।")
         
     spot, rows, meta = st.session_state.live_chain
     df = make_df(rows)
