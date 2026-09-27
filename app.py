@@ -1039,7 +1039,27 @@ def main_trading_dashboard():
         st.success("🟢 LIVE MARKET DATA — FYERS से वर्तमान data आ रहा है।")
     else:
         cache_text = st.session_state.cached_at or "पिछला उपलब्ध snapshot"
-        st.info(f"🔵 MARKET CLOSED / LAST AVAILABLE DATA — अभी live market data नहीं है। नीचे दिख रहा data अंतिम उपलब्ध snapshot है: {cache_text}. Market खुलते ही dashboard live data पर अपने आप switch होगा।")
+        st.markdown(
+    f"""
+    <div style="
+        background: linear-gradient(90deg, #eef6ff, #f5f9ff);
+        border: 1px solid #b8d8ff;
+        border-radius: 10px;
+        padding: 10px 16px;
+        margin: 8px 0 14px 0;
+        text-align: center;
+        font-size: 15px;
+        font-weight: 600;
+    ">
+        🔵 MARKET CLOSED &nbsp;•&nbsp; LAST DATA: {cached_at}
+        <br>
+        <span style="font-size:13px; font-weight:500;">
+            ⚡ Market Open होते ही Live Update शुरू होगा।
+        </span>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
         
     spot, rows, meta = st.session_state.live_chain
     df = make_df(rows)
