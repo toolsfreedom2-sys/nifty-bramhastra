@@ -189,6 +189,7 @@ if "live_history" not in st.session_state: st.session_state.live_history = None
 if "data_source" not in st.session_state: st.session_state.data_source = "NONE"
 if "cached_at" not in st.session_state: st.session_state.cached_at = None
 if "data_symbol" not in st.session_state: st.session_state.data_symbol = None
+if "closed_wide_refresh_attempted" not in st.session_state: st.session_state.closed_wide_refresh_attempted = False
 if "oi_history" not in st.session_state: st.session_state.oi_history = deque(maxlen=720)
 
 # =====================================================================
@@ -643,12 +644,26 @@ def main_trading_dashboard():
             return None
 
     def option_chain(api, symbol, strike_count):
-        data = {"symbol": symbol, "strikecount": int(strike_count), "greeks": "1"}
-        try: return api.optionchain(data=data)
-        except TypeError:
-            data["greeks"] = True
-            return api.optionchain(data=data)
-        except Exception as exc: return {"s": "error", "message": str(exc)}
+        """Request a wide chain so 15/20/25 ATM ranges are actually available."""
+        requested = max(10, int(strike_count))
+        attempts = [requested]
+        if requested < 50:
+            attempts.append(50)
+        last = None
+        for count in attempts:
+            data = {"symbol": symbol, "strikecount": count, "greeks": "1"}
+            try:
+                resp = api.optionchain(data=data)
+            except TypeError:
+                data["greeks"] = True
+                resp = api.optionchain(data=data)
+            except Exception as exc:
+                last = {"s": "error", "message": str(exc)}
+                continue
+            if isinstance(resp, dict) and str(resp.get("s", "")).lower() == "ok":
+                return resp
+            last = resp
+        return last or {"s": "error", "message": "Option chain unavailable"}
 
     def history(api, symbol):
         now = int(time.time())
@@ -974,13 +989,20 @@ def main_trading_dashboard():
                 })
         return pd.DataFrame(records)
 
-    def _oi_video_style_chart(chart_df, spot, title, show_oi_change=True):
-        """Render the two requested OI visuals with working labels and a combined strike tooltip."""
+    def _oi_video_style_chart(chart_df, spot, title, show_oi_change=True, metric="OI"):
+        """Render reliable Vega-Lite bars for OI or OI Change.
+        Hovering a strike shows combined CALL + PUT information.
+        """
         if chart_df.empty:
             st.info("इस समय OI chart के लिए पर्याप्त strike data उपलब्ध नहीं है।")
             return
 
-        # One row per strike for a combined Call + Put tooltip.
+        # Make sure numeric fields are truly numeric before sending them to Vega.
+        chart_df = chart_df.copy()
+        for col in ["strike", "OI", "StartOI", "Change"]:
+            chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").fillna(0.0)
+        chart_df = chart_df.sort_values(["strike", "Side"]).reset_index(drop=True)
+
         combined = []
         for strike, g in chart_df.groupby("strike", sort=True):
             call = g[g["Side"] == "CALL"]
@@ -999,25 +1021,30 @@ def main_trading_dashboard():
                 "Put OI Text": q["CompactOI"] if q is not None else "0",
                 "Call Change Text": c["CompactChange"] if c is not None else "0",
                 "Put Change Text": q["CompactChange"] if q is not None else "0",
-                "Hover Y": max(float(c["OI"]) if c is not None else 0, float(q["OI"]) if q is not None else 0),
             })
         combined_df = pd.DataFrame(combined)
 
-        call_color = "#d95768"
-        put_color = "#62db6a"
+        # For OI tab bars = current OI. For OI Change tab bars = actual change.
+        value_field = "OI" if metric == "OI" else "Change"
+        value_title = "Open Interest" if metric == "OI" else "OI Change"
+
+        # The chart spec owns its data. Passing a second dataframe to
+        # st.vega_lite_chart can override the embedded values in some Streamlit
+        # versions, which was the reason the previous bars could disappear.
+        base_values = chart_df.to_dict("records")
         spec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
             "width": "container",
             "height": 430,
-            "data": {"name": "source"},
+            "data": {"values": base_values},
             "layer": [
                 {
-                    "mark": {"type": "bar", "size": 24, "cornerRadiusTopLeft": 2, "cornerRadiusTopRight": 2},
+                    "mark": {"type": "bar", "size": 20, "cornerRadiusTopLeft": 3, "cornerRadiusTopRight": 3},
                     "encoding": {
                         "x": {"field": "strike", "type": "ordinal", "sort": "ascending", "axis": {"title": "Strike Price", "labelAngle": -55, "labelFontSize": 10}},
                         "xOffset": {"field": "Side", "type": "nominal"},
-                        "y": {"field": "OI", "type": "quantitative", "title": "Open Interest", "axis": {"format": ".2s"}},
-                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": [put_color, call_color]}, "legend": {"title": None, "orient": "bottom"}},
+                        "y": {"field": value_field, "type": "quantitative", "title": value_title, "axis": {"format": ".2s"}},
+                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#62db6a", "#d95768"]}, "legend": {"title": None, "orient": "bottom"}},
                         "tooltip": [
                             {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
                             {"field": "Side", "type": "nominal", "title": "Side"},
@@ -1030,9 +1057,8 @@ def main_trading_dashboard():
             ]
         }
 
-        # Show OI Change as a readable number ABOVE each OI bar, not as a second
-        # independent bar with a different scale.
-        if show_oi_change:
+        # In the Open Interest view, optionally print OI Change above the bars.
+        if metric == "OI" and show_oi_change:
             spec["layer"].append({
                 "mark": {"type": "text", "dy": -9, "fontSize": 10, "fontWeight": 700},
                 "encoding": {
@@ -1040,30 +1066,37 @@ def main_trading_dashboard():
                     "xOffset": {"field": "Side", "type": "nominal"},
                     "y": {"field": "OI", "type": "quantitative"},
                     "text": {"field": "CompactChange", "type": "nominal"},
-                    "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": [put_color, call_color]}, "legend": None}
+                    "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#166534", "#991b1b"]}, "legend": None}
                 }
             })
 
-        # Invisible/near-invisible strike-level hit target. Hovering a strike now
-        # gives BOTH Call and Put values in one popup, matching the requested UI.
-        spec["layer"].append({
-            "data": {"values": combined_df.to_dict("records")},
-            "mark": {"type": "rect", "opacity": 0.001},
-            "encoding": {
-                "x": {"field": "strike", "type": "ordinal", "sort": "ascending"},
-                "y": {"datum": 0, "type": "quantitative"},
-                "y2": {"field": "Hover Y"},
-                "tooltip": [
-                    {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
-                    {"field": "Call OI Text", "type": "nominal", "title": "CALL OI"},
-                    {"field": "Put OI Text", "type": "nominal", "title": "PUT OI"},
-                    {"field": "Call Change Text", "type": "nominal", "title": "CALL OI Change"},
-                    {"field": "Put Change Text", "type": "nominal", "title": "PUT OI Change"},
-                    {"field": "Call Start OI", "type": "quantitative", "title": "CALL Start OI", "format": ".2s"},
-                    {"field": "Put Start OI", "type": "quantitative", "title": "PUT Start OI", "format": ".2s"}
-                ]
-            }
-        })
+        # Transparent strike-wide hit area. One hover popup contains CALL + PUT.
+        # Use an explicit maxY so it covers positive OI and positive/negative change.
+        if not combined_df.empty:
+            if metric == "OI":
+                combined_df["HoverTop"] = combined_df[["Call OI", "Put OI"]].max(axis=1).clip(lower=1)
+                y_zero = 0
+            else:
+                combined_df["HoverTop"] = combined_df[["Call OI Change", "Put OI Change"]].abs().max(axis=1).clip(lower=1)
+                y_zero = 0
+            spec["layer"].append({
+                "data": {"values": combined_df.to_dict("records")},
+                "mark": {"type": "rect", "opacity": 0.001},
+                "encoding": {
+                    "x": {"field": "strike", "type": "ordinal", "sort": "ascending"},
+                    "y": {"datum": y_zero, "type": "quantitative"},
+                    "y2": {"field": "HoverTop", "type": "quantitative"},
+                    "tooltip": [
+                        {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
+                        {"field": "Call OI Text", "type": "nominal", "title": "CALL OI"},
+                        {"field": "Put OI Text", "type": "nominal", "title": "PUT OI"},
+                        {"field": "Call Change Text", "type": "nominal", "title": "CALL OI Change"},
+                        {"field": "Put Change Text", "type": "nominal", "title": "PUT OI Change"},
+                        {"field": "Call Start OI", "type": "quantitative", "title": "CALL Start OI", "format": ".2s"},
+                        {"field": "Put Start OI", "type": "quantitative", "title": "PUT Start OI", "format": ".2s"}
+                    ]
+                }
+            })
 
         # ATM marker.
         if spot is not None:
@@ -1074,11 +1107,7 @@ def main_trading_dashboard():
                 "encoding": {"x": {"field": "atm", "type": "ordinal"}}
             })
 
-        st.vega_lite_chart(
-            chart_df,
-            spec=spec,
-            use_container_width=True,
-        )
+        st.vega_lite_chart(spec=spec, use_container_width=True)
 
     def oi_visual_dashboard(df, spot, index_name):
         """Only the two requested visual modules: Open Interest and OI Change."""
@@ -1196,7 +1225,7 @@ def main_trading_dashboard():
             start_snap, end_snap = get_snapshots(start_ts, end_ts)
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
-            _oi_video_style_chart(chart_df, spot, "Open Interest", show_change)
+            _oi_video_style_chart(chart_df, spot, "Open Interest", show_change, metric="OI")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "OI"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "OI"].sum()) if not chart_df.empty else 0
@@ -1224,7 +1253,7 @@ def main_trading_dashboard():
             start_snap, end_snap = get_snapshots(start_ts, end_ts)
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
-            _oi_video_style_chart(chart_df, spot, "OI Change", show_change)
+            _oi_video_style_chart(chart_df, spot, "OI Change", show_change, metric="CHANGE")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
@@ -1267,6 +1296,7 @@ def main_trading_dashboard():
         st.session_state.data_source = "NONE"
         st.session_state.cached_at = None
         st.session_state.data_symbol = symbol
+        st.session_state.closed_wide_refresh_attempted = False
 
     if st.session_state.live_chain is None:
         cached = load_market_cache(symbol)
@@ -1287,12 +1317,27 @@ def main_trading_dashboard():
     # FYERS may still return the last available option-chain snapshot even
     # though the exchange itself is closed. That snapshot is then cached.
     should_fetch = market_open and (now - st.session_state.last_fetch >= 0.9)
-    fallback_closed_fetch = (not market_open and st.session_state.live_chain is None and
-                             (now - st.session_state.last_fetch >= 2.0))
+    # If the persisted cache was created with the old 10-strike version, make
+    # one wider FYERS request even while the market is closed. If FYERS does
+    # not provide a wider historical chain, the old cache is retained safely.
+    cached_unique_strikes = 0
+    if st.session_state.live_chain:
+        try:
+            cached_unique_strikes = len(set(float(r.get("strike", 0)) for r in st.session_state.live_chain[1] if r.get("strike") is not None))
+        except Exception:
+            cached_unique_strikes = 0
+    fallback_closed_fetch = (
+        not market_open
+        and not st.session_state.closed_wide_refresh_attempted
+        and (st.session_state.live_chain is None or cached_unique_strikes < 35)
+        and (now - st.session_state.last_fetch >= 2.0)
+    )
 
     if should_fetch or fallback_closed_fetch:
+        if fallback_closed_fetch:
+            st.session_state.closed_wide_refresh_attempted = True
         try:
-            resp = option_chain(api, symbol, max(int(strike_count), 25))
+            resp = option_chain(api, symbol, 50)
             spot, rows, meta, err = parse_chain(resp)
             if not err and rows:
                 hist_resp = history(api, symbol)
