@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 """
 NIFTY OI BRAHMĀSTRA (FINAL PRODUCTION SAAS VERSION WITH GOOGLE OAUTH & SWING ALERTS)
 Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
@@ -1006,8 +1006,15 @@ def main_trading_dashboard():
             st.session_state.cached_at = cached.get("saved_at_text")
 
     # During market hours, keep polling FYERS for fresh data. Outside market
-    # hours we deliberately keep the last successful snapshot on screen.
-    if market_open and now - st.session_state.last_fetch >= 0.9:
+    # hours we first use the persistent cache, but if no cache exists (for
+    # example after a fresh deployment/restart), make one fallback FYERS call.
+    # FYERS may still return the last available option-chain snapshot even
+    # though the exchange itself is closed. That snapshot is then cached.
+    should_fetch = market_open and (now - st.session_state.last_fetch >= 0.9)
+    fallback_closed_fetch = (not market_open and st.session_state.live_chain is None and
+                             (now - st.session_state.last_fetch >= 2.0))
+
+    if should_fetch or fallback_closed_fetch:
         try:
             resp = option_chain(api, symbol, strike_count)
             spot, rows, meta, err = parse_chain(resp)
@@ -1016,17 +1023,18 @@ def main_trading_dashboard():
                 st.session_state.live_chain = (spot, rows, meta)
                 st.session_state.live_history = hist_resp
                 st.session_state.last_fetch = now
-                st.session_state.data_source = "LIVE"
+                st.session_state.data_source = "LIVE" if market_open else "LAST_FYERS"
                 st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                 st.session_state.data_symbol = symbol
                 add_snapshot(rows)
                 save_market_cache(symbol, spot, rows, meta, hist_resp)
         except Exception:
-            pass
-    elif not market_open and st.session_state.live_chain is None:
-        # No cached data exists yet. Keep the dashboard honest rather than
-        # fabricating values.
-        st.info("ℹ️ मार्केट अभी बंद है और इस Index का कोई पुराना cached data उपलब्ध नहीं है। Market खुलने पर live data अपने आप आ जाएगा।")
+            st.session_state.last_fetch = now
+
+    if not market_open and st.session_state.live_chain is None:
+        # No persistent cache and FYERS did not return a last snapshot.
+        # Keep the dashboard honest rather than fabricating values.
+        st.info("ℹ️ मार्केट बंद है। इस Index का पिछला snapshot अभी उपलब्ध नहीं मिला। जैसे ही FYERS का पुराना/नया data मिलेगा, उसे यहाँ दिखाकर cache कर दिया जाएगा।")
 
     st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE / LAST DATA")
     if not st.session_state.live_chain:
@@ -1037,6 +1045,8 @@ def main_trading_dashboard():
     # data from the last available market snapshot.
     if st.session_state.data_source == "LIVE" and market_open:
         st.success("🟢 LIVE MARKET DATA — FYERS से वर्तमान data आ रहा है।")
+    elif st.session_state.data_source == "LAST_FYERS":
+        st.info(f"🔵 LAST AVAILABLE FYERS DATA — Market बंद है, इसलिए FYERS से मिला अंतिम उपलब्ध snapshot दिखाया जा रहा है: {st.session_state.cached_at}.")
     else:
         cache_text = st.session_state.cached_at or "पिछला उपलब्ध snapshot"
         st.info(f"🔵 MARKET CLOSED / LAST AVAILABLE DATA — अभी live market data नहीं है। नीचे दिख रहा data अंतिम उपलब्ध snapshot है: {cache_text}. Market खुलते ही dashboard live data पर अपने आप switch होगा।")
