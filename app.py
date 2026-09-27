@@ -479,18 +479,6 @@ def pricing_page():
 # =====================================================================
 # PAGE 3: MAIN TRADING DASHBOARD
 # =====================================================================
-# Streamlit fragment keeps the trading dashboard itself on a true 1-second
-# automatic rerun cycle. The existing FYERS polling guard below is set to 0.9s,
-# so each fragment cycle can request fresh market data without creating duplicate
-# OI history snapshots (those are still throttled to the existing ~55s cadence).
-if hasattr(st, "fragment"):
-    _dashboard_fragment = lambda **kwargs: st.fragment(**kwargs)
-else:
-    # Compatibility fallback for older Streamlit builds. Upgrade Streamlit to
-    # a version supporting st.fragment(run_every=...) for automatic 1-second refresh.
-    _dashboard_fragment = lambda **kwargs: (lambda fn: fn)
-
-@_dashboard_fragment(run_every=1)
 def main_trading_dashboard():
     def sf(v, default=0.0):
         try: return float(v)
@@ -1022,20 +1010,13 @@ def main_trading_dashboard():
                 f"<b>Raw Details:</b><br>Price: {price:+.2f}%<br>Volume: {vol:+.1f}%<br>OI: {oi:+.2f}%<br>OI Change: {oich:+.0f}")
 
     st.markdown(r'''<style>
-    /* Hover popup layering fix: keep the popup above later Streamlit rows/cards. */
-    div[data-testid="stHorizontalBlock"],
-    div[data-testid="column"],
-    div[data-testid="stVerticalBlock"],
-    div[data-testid="stElementContainer"]{overflow:visible!important;}
-    div[data-testid="column"]:has(.metric-hover-wrap){position:relative!important;z-index:100!important;}
-    div[data-testid="column"]:has(.metric-hover-wrap:hover){z-index:999999!important;}
-    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:1000;isolation:isolate;}
+    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:20;}
     .metric-hover-main{position:relative;z-index:2;}
     .metric-hover-label{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.02em;}
     .metric-hover-value{font-size:22px;font-weight:850;color:#0f172a;margin-top:2px;}
-    .metric-hover-popup{position:absolute;left:0;top:calc(100% + 7px);width:min(430px,calc(100vw - 42px));padding:14px 16px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 18px 45px rgba(15,23,42,.30);font-size:12px;line-height:1.55;opacity:0;visibility:hidden;transform:translateY(-5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;z-index:1000000;}
+    .metric-hover-popup{position:absolute;left:0;top:calc(100% + 7px);width:min(430px,calc(100vw - 42px));padding:14px 16px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 18px 45px rgba(15,23,42,.30);font-size:12px;line-height:1.55;opacity:0;visibility:hidden;transform:translateY(-5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;}
     .metric-hover-wrap:hover{border-color:rgba(59,130,246,.45);box-shadow:0 7px 20px rgba(15,23,42,.10);}
-    .metric-hover-wrap:hover .metric-hover-popup{opacity:1;visibility:visible;transform:translateY(0);z-index:1000000;}
+    .metric-hover-wrap:hover .metric-hover-popup{opacity:1;visibility:visible;transform:translateY(0);}
     .metric-hover-popup b{color:#fff;}
     .ff-hover{min-height:96px;}
     </style>''',unsafe_allow_html=True)
@@ -1088,28 +1069,16 @@ def main_trading_dashboard():
         st.line_chart(pd.DataFrame(data).set_index("Time")[["Open", "High", "Low", "Close"]], height=400)
 
     def _oi_chart_history(current_rows, window_minutes):
-        """Return a historical baseline and the CURRENT live snapshot.
-
-        The dashboard may rerun every second, but OI history is intentionally
-        sampled about once per minute.  Therefore the chart must never use the
-        last historical sample as its right-hand endpoint: doing that makes the
-        bars look frozen for up to a minute.  The right-hand endpoint is always
-        the current FYERS rows, while the left-hand endpoint comes from the
-        selected historical window.
-        """
+        """Return baseline/current snapshots for the selected OI chart window."""
         hist = list(st.session_state.get("oi_history", deque()))
         if not hist:
-            live_ts = time.time()
-            return live_ts, None, live_ts, take_snapshot(current_rows)
-
+            return None, None, None, None
         hist.sort(key=lambda x: x[0])
-        live_ts = time.time()
-        live_snap = take_snapshot(current_rows)
-
+        end_ts, end_snap = hist[-1]
         if window_minutes is None:
             start_ts, start_snap = hist[0]
         else:
-            target = live_ts - window_minutes * 60
+            target = end_ts - window_minutes * 60
             chosen = None
             for item in hist:
                 if item[0] <= target:
@@ -1120,8 +1089,7 @@ def main_trading_dashboard():
                 start_ts, start_snap = hist[0]
             else:
                 start_ts, start_snap = chosen
-
-        return start_ts, start_snap, live_ts, live_snap
+        return start_ts, start_snap, end_ts, end_snap
 
     def _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike):
         """Build rows for OI/OI-Change charts.
@@ -1343,19 +1311,17 @@ def main_trading_dashboard():
                 return chosen[0].timestamp(), chosen[1].timestamp(), show_change
 
             selected_minutes = dict(window_options)[choice]
-            # The right edge is ALWAYS the current live dashboard time.  The
-            # historical snapshots are used only to locate the selected-window
-            # baseline.  This keeps the OI/OI-Change bars moving with Spot and
-            # the live option chain instead of waiting for the next history
-            # snapshot.
-            live_end_ts = time.time()
+            # The end of every window is always the latest available snapshot.
+            # If the requested duration is longer than the stored history, use
+            # the oldest available snapshot rather than silently reusing the
+            # current snapshot. This makes the displayed baseline explicit.
             if selected_minutes is None:
                 start_ts = min_ts
             else:
-                target = live_end_ts - selected_minutes * 60
+                target = max_ts - selected_minutes * 60
                 candidates = [ts for ts, _ in hist if ts <= target]
                 start_ts = candidates[-1] if candidates else min_ts
-            return start_ts, live_end_ts, show_change
+            return start_ts, max_ts, show_change
 
         def strike_controls(prefix):
             c1, c2 = st.columns([1.05, 2.5])
@@ -1397,25 +1363,14 @@ def main_trading_dashboard():
         def get_snapshots(start_ts, end_ts):
             hist_sorted = sorted(hist, key=lambda x: x[0])
             start_snap = hist_sorted[0][1]
+            end_snap = hist_sorted[-1][1]
             for ts, snap in hist_sorted:
                 if ts <= start_ts:
                     start_snap = snap
+                if ts <= end_ts:
+                    end_snap = snap
                 else:
                     break
-
-            # For the live/default window, the right edge is the latest FYERS
-            # data, not the last 55-second history snapshot.  This is the key
-            # fix for the frozen OI Change bars seen in the screen recording.
-            now_ts = time.time()
-            if end_ts >= now_ts - 2.0:
-                end_snap = take_snapshot(rows)
-            else:
-                end_snap = hist_sorted[-1][1]
-                for ts, snap in hist_sorted:
-                    if ts <= end_ts:
-                        end_snap = snap
-                    else:
-                        break
             return start_snap, end_snap
 
         # OPEN INTEREST FIRST
@@ -1430,7 +1385,7 @@ def main_trading_dashboard():
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
             _oi_video_style_chart(chart_df, spot, "Open Interest", show_change, metric="OI")
-            st.caption(f"Selected OI baseline: {datetime.fromtimestamp(start_ts).strftime('%H:%M:%S')} → LIVE {datetime.fromtimestamp(end_ts).strftime('%H:%M:%S')}. Bars use the current FYERS OI snapshot; labels show the selected-window OI change.")
+            st.caption(f"Selected OI baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Bars use the current OI snapshot; labels show the selected-window OI change.")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "OI"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "OI"].sum()) if not chart_df.empty else 0
@@ -1459,7 +1414,7 @@ def main_trading_dashboard():
             atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
             chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
             _oi_video_style_chart(chart_df, spot, "OI Change", show_change, metric="CHANGE")
-            st.caption(f"Selected OI Change baseline: {datetime.fromtimestamp(start_ts).strftime('%H:%M:%S')} → LIVE {datetime.fromtimestamp(end_ts).strftime('%H:%M:%S')}. Every bar = current live OI − selected-window baseline OI; positive above zero, negative below zero.")
+            st.caption(f"Selected OI Change baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Every bar = current OI − selected-window baseline OI; positive above zero, negative below zero.")
 
             total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
             total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
@@ -1567,11 +1522,6 @@ def main_trading_dashboard():
         st.info("ℹ️ मार्केट बंद है। इस Index का पिछला snapshot अभी उपलब्ध नहीं मिला। जैसे ही FYERS का पुराना/नया data मिलेगा, उसे यहाँ दिखाकर cache कर दिया जाएगा।")
 
     st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE / LAST DATA")
-    # Live refresh indicator: the fragment reruns every 1 second; FYERS polling
-    # is independently guarded by last_fetch so the market request is made at
-    # most once per second.
-    refresh_ts = datetime.now().strftime("%H:%M:%S")
-    st.caption(f"🔄 LIVE AUTO REFRESH: 1 SECOND • Last dashboard refresh: {refresh_ts}")
     if not st.session_state.live_chain:
         st.info("डेटा उपलब्ध होने की प्रतीक्षा करें...")
         return
