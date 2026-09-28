@@ -6,6 +6,7 @@ Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
 
 import json
 import time
+import threading
 import requests
 import hashlib
 import base64
@@ -13,6 +14,13 @@ import webbrowser
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import deque
+
+try:
+    from fyers_apiv3.FyersWebsocket import data_ws
+    FYERS_WS_IMPORT_ERROR = None
+except Exception as exc:
+    data_ws = None
+    FYERS_WS_IMPORT_ERROR = str(exc)
 
 import numpy as np
 import pandas as pd
@@ -178,6 +186,122 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
+# TRUE LIVE FYERS WEBSOCKET CACHE
+# ---------------------------------------------------------------------
+_WS_LOCK = threading.RLock()
+_WS_MANAGERS = {}
+
+class _FyersLiveFeed:
+    def __init__(self, client_id, token):
+        self.client_id = client_id
+        self.token = token
+        self.access_token = f"{client_id}:{token}"
+        self.lock = threading.RLock()
+        self.ticks = {}
+        self.symbols = set()
+        self.ws = None
+        self.connected = False
+        self.started = False
+        self.last_message = 0.0
+        self.last_error = ""
+
+    def _on_message(self, message):
+        if not isinstance(message, dict):
+            return
+        symbol = message.get("symbol") or message.get("Symbol")
+        if not symbol:
+            return
+        with self.lock:
+            self.ticks[str(symbol)] = dict(message)
+            self.last_message = time.time()
+
+    def _on_error(self, message):
+        self.last_error = str(message)
+        self.connected = False
+
+    def _on_close(self, message):
+        self.connected = False
+
+    def _on_connect(self):
+        self.connected = True
+        with self.lock:
+            syms = list(self.symbols)
+        if syms:
+            try:
+                self.ws.subscribe(symbols=syms, data_type="SymbolUpdate")
+            except Exception as exc:
+                self.last_error = str(exc)
+        try:
+            self.ws.keep_running()
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.connected = False
+
+    def _run(self):
+        if data_ws is None:
+            self.last_error = f"FYERS WebSocket unavailable: {FYERS_WS_IMPORT_ERROR}"
+            return
+        try:
+            self.ws = data_ws.FyersDataSocket(
+                access_token=self.access_token,
+                log_path="",
+                litemode=False,
+                write_to_file=False,
+                reconnect=True,
+                reconnect_retry=10,
+                on_connect=self._on_connect,
+                on_close=self._on_close,
+                on_error=self._on_error,
+                on_message=self._on_message,
+            )
+            self.started = True
+            self.ws.connect()
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.connected = False
+
+    def start(self):
+        if self.started:
+            return
+        t = threading.Thread(target=self._run, name="fyers-live-feed", daemon=True)
+        t.start()
+
+    def set_symbols(self, symbols):
+        new_set = {str(x) for x in symbols if x}
+        with self.lock:
+            old = set(self.symbols)
+            self.symbols = new_set
+        self.start()
+        if self.connected and self.ws:
+            add = list(new_set - old)
+            remove = list(old - new_set)
+            try:
+                if remove:
+                    self.ws.unsubscribe(symbols=remove, data_type="SymbolUpdate")
+                if add:
+                    self.ws.subscribe(symbols=add, data_type="SymbolUpdate")
+            except Exception as exc:
+                self.last_error = str(exc)
+
+    def get(self, symbol):
+        with self.lock:
+            return dict(self.ticks.get(str(symbol), {}))
+
+    def status(self):
+        with self.lock:
+            return self.connected, self.last_message, self.last_error
+
+
+def get_live_feed(client_id, token):
+    key = f"{client_id}:{token}"
+    with _WS_LOCK:
+        feed = _WS_MANAGERS.get(key)
+        if feed is None:
+            feed = _FyersLiveFeed(client_id, token)
+            _WS_MANAGERS[key] = feed
+        return feed
+
+# ---------------------------------------------------------------------
 # SESSION STATE SETUP
 # ---------------------------------------------------------------------
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
@@ -186,6 +310,7 @@ if "has_subscription" not in st.session_state: st.session_state.has_subscription
 if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
 if "last_quote_fetch" not in st.session_state: st.session_state.last_quote_fetch = 0.0
 if "last_history_fetch" not in st.session_state: st.session_state.last_history_fetch = 0.0
+if "last_fetch_error" not in st.session_state: st.session_state.last_fetch_error = ""
 if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 if "data_source" not in st.session_state: st.session_state.data_source = "NONE"
@@ -602,7 +727,11 @@ def main_trading_dashboard():
         Exchange holidays are not embedded here; if FYERS returns live data it
         still takes precedence during the session.
         """
-        dt = dt or datetime.now()
+        try:
+            from zoneinfo import ZoneInfo
+            dt = dt.astimezone(ZoneInfo("Asia/Kolkata")) if dt and getattr(dt, "tzinfo", None) else datetime.now(ZoneInfo("Asia/Kolkata"))
+        except Exception:
+            dt = dt or datetime.now()
         if dt.weekday() >= 5:
             return False
         t = dt.time()
@@ -706,7 +835,7 @@ def main_trading_dashboard():
                 continue
             g = x.get("greeks") or {}
             rows.append({
-                "strike": sf(x.get("strike_price")), "type": typ, "ltp": sf(x.get("ltp")), "oi": si(x.get("oi")),
+                "strike": sf(x.get("strike_price")), "type": typ, "symbol": x.get("symbol") or x.get("option_symbol") or "", "ltp": sf(x.get("ltp")), "oi": si(x.get("oi")),
                 "oich": si(x.get("oich")), "oichp": sf(x.get("oichp")), "volume": si(x.get("volume", x.get("vol", x.get("v", 0)))), "iv": sf(x.get("iv", g.get("iv"))),
                 "delta": sf(g.get("delta")), "theta": sf(g.get("theta"))
             })
@@ -1583,54 +1712,80 @@ def main_trading_dashboard():
     # example after a fresh deployment/restart), make one fallback FYERS call.
     # FYERS may still return the last available option-chain snapshot even
     # though the exchange itself is closed. That snapshot is then cached.
-    should_fetch = market_open and (now - st.session_state.last_fetch >= 0.9)
-    # If the persisted cache was created with the old 10-strike version, make
-    # one wider FYERS request even while the market is closed. If FYERS does
-    # not provide a wider historical chain, the old cache is retained safely.
-    cached_unique_strikes = 0
-    if st.session_state.live_chain:
-        try:
-            cached_unique_strikes = len(set(float(r.get("strike", 0)) for r in st.session_state.live_chain[1] if r.get("strike") is not None))
-        except Exception:
-            cached_unique_strikes = 0
-    fallback_closed_fetch = (
-        not market_open
-        and not st.session_state.closed_wide_refresh_attempted
-        and (st.session_state.live_chain is None or cached_unique_strikes < 35)
-        and (now - st.session_state.last_fetch >= 2.0)
-    )
+    # -----------------------------------------------------------------
+    # HYBRID LIVE FEED:
+    #   * WebSocket -> live LTP/volume for index + option symbols.
+    #   * Option-chain REST -> OI/ΔOI/IV/Greeks, refreshed periodically.
+    #   * Quotes API -> live index spot fallback/verification.
+    # FYERS currently does not provide OI on SymbolUpdate WebSocket; OI is
+    # supplied by the Option Chain API and can update less frequently.
+    # -----------------------------------------------------------------
+    chain_refresh_due = market_open and (now - st.session_state.last_fetch >= 15.0)
+    if st.session_state.live_chain is None:
+        chain_refresh_due = True
 
-    if should_fetch or fallback_closed_fetch:
-        if fallback_closed_fetch:
-            st.session_state.closed_wide_refresh_attempted = True
+    live_feed = get_live_feed(FYERS_APP_ID, access_token)
+
+    # First REST chain fetch establishes the option symbols to subscribe to.
+    if chain_refresh_due:
         try:
-            # Poll the live option chain approximately once per second.
             resp = option_chain(api, symbol, 50)
-            spot_chain, rows, meta, err = parse_chain(resp)
-            if not err and rows:
-                # Poll the index quote from FYERS Quotes API as the live spot source.
-                live_spot = quote_spot(api, symbol) if market_open else None
-                spot = live_spot if live_spot is not None else spot_chain
-
-                # Historical candles are throttled; they are not a 1-second feed.
+            spot_chain, fresh_rows, fresh_meta, err = parse_chain(resp)
+            if not err and fresh_rows:
                 hist_resp = st.session_state.live_history
                 if (not hist_resp) or (now - st.session_state.last_history_fetch >= 55.0):
                     hist_resp = history(api, symbol)
                     st.session_state.live_history = hist_resp
                     st.session_state.last_history_fetch = now
 
-                st.session_state.live_chain = (spot, rows, meta)
+                # Preserve live websocket LTP/volume where already available.
+                for r in fresh_rows:
+                    tick = live_feed.get(r.get("symbol")) if r.get("symbol") else {}
+                    if tick:
+                        if tick.get("ltp") is not None:
+                            r["ltp"] = sf(tick.get("ltp"))
+                        if tick.get("vol_traded_today") is not None:
+                            r["volume"] = si(tick.get("vol_traded_today"))
+
+                st.session_state.live_chain = (spot_chain, fresh_rows, fresh_meta)
                 st.session_state.last_fetch = now
-                if live_spot is not None:
-                    st.session_state.last_quote_fetch = now
                 st.session_state.data_source = "LIVE" if market_open else "LAST_FYERS"
                 st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                 st.session_state.data_symbol = symbol
-                snapshot_added = add_snapshot(rows)
-                if snapshot_added or st.session_state.data_source != "LIVE":
-                    save_market_cache(symbol, spot, rows, meta, hist_resp)
-        except Exception:
-            st.session_state.last_fetch = now
+                add_snapshot(fresh_rows)
+                if not market_open:
+                    save_market_cache(symbol, spot_chain, fresh_rows, fresh_meta, hist_resp)
+        except Exception as exc:
+            st.session_state.last_fetch_error = str(exc)
+
+    # Subscribe to the currently displayed option chain plus the index.
+    if st.session_state.live_chain:
+        current_rows = st.session_state.live_chain[1]
+        ws_symbols = [symbol]
+        ws_symbols.extend(r.get("symbol") for r in current_rows if r.get("symbol"))
+        live_feed.set_symbols(ws_symbols)
+
+        # Every fragment run, merge the newest websocket ticks into the rows.
+        current_spot = live_feed.get(symbol).get("ltp")
+        if current_spot is None and market_open and (now - st.session_state.last_quote_fetch >= 0.8):
+            current_spot = quote_spot(api, symbol)
+            if current_spot is not None:
+                st.session_state.last_quote_fetch = now
+
+        updated_rows = []
+        for r in current_rows:
+            nr = dict(r)
+            tick = live_feed.get(nr.get("symbol")) if nr.get("symbol") else {}
+            if tick.get("ltp") is not None:
+                nr["ltp"] = sf(tick.get("ltp"))
+            if tick.get("vol_traded_today") is not None:
+                nr["volume"] = si(tick.get("vol_traded_today"))
+            updated_rows.append(nr)
+
+        old_spot = st.session_state.live_chain[0]
+        spot_now = sf(current_spot) if current_spot is not None else sf(old_spot)
+        st.session_state.live_chain = (spot_now, updated_rows, st.session_state.live_chain[2])
+        st.session_state.data_source = "LIVE" if market_open and (current_spot is not None or live_feed.status()[1] > 0) else st.session_state.data_source
 
     if not market_open and st.session_state.live_chain is None:
         # No persistent cache and FYERS did not return a last snapshot.
@@ -1646,7 +1801,12 @@ def main_trading_dashboard():
     # data from the last available market snapshot.
     if st.session_state.data_source == "LIVE" and market_open:
         age = max(0.0, time.time() - float(st.session_state.last_fetch or time.time()))
-        st.success(f"🟢 LIVE MARKET DATA — FYERS से live data आ रहा है • Last update: {age:.1f}s ago • Auto refresh: 1s")
+        ws_ok, ws_last, ws_err = live_feed.status() if 'live_feed' in locals() else (False, 0.0, '')
+        tick_age = max(0.0, time.time() - ws_last) if ws_last else 999.0
+        ws_text = f"WebSocket: {'LIVE' if ws_ok and tick_age < 5 else 'WAITING'}"
+        st.success(f"🟢 LIVE MARKET DATA — FYERS • {ws_text} • Tick: {tick_age:.1f}s • Chain refresh: {age:.1f}s • Auto refresh: 1s")
+        if getattr(st.session_state, 'last_fetch_error', ''):
+            st.warning(f"⚠️ Option-chain refresh: {st.session_state.last_fetch_error}")
     elif st.session_state.data_source == "LAST_FYERS":
         st.info(f"🔵 LAST AVAILABLE FYERS DATA — Market बंद है, इसलिए FYERS से मिला अंतिम उपलब्ध snapshot दिखाया जा रहा है: {st.session_state.cached_at}.")
     else:
