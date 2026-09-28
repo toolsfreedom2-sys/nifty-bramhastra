@@ -859,7 +859,6 @@ def main_trading_dashboard():
             "oi_pct": oi_pct,
             "oich": oich,
             "volume_stable": volume_stable,
-            "checks": checks,
         }
 
     def _snapshot_for_minutes(minutes):
@@ -961,75 +960,42 @@ def main_trading_dashboard():
             <b>क्या देखें:</b> VIX ↑ के साथ option premiums/price swings बढ़ सकते हैं; VIX ↓ में volatility pressure घट सकता है।<br>
             <b>सावधानी:</b> VIX direction यह नहीं बताती कि NIFTY निश्चित रूप से ऊपर जाएगा या नीचे।'''
 
-    def _trend_strength(score):
-        score = float(score or 0)
-        if score >= 0.45: return "STRONG BULLISH"
-        if score >= 0.18: return "BULLISH"
-        if score <= -0.45: return "STRONG BEARISH"
-        if score <= -0.18: return "BEARISH"
-        return "SIDEWAYS"
-
-    def _direction_arrow(score):
-        score = float(score or 0)
-        if score >= 0.18: return "↑"
-        if score <= -0.18: return "↓"
-        return "→"
-
-    def _score_explanation(minutes, score, detail, all_details=None):
-        all_details = all_details or {minutes: detail}
-        current_trend = "BULLISH" if score >= 0.18 else ("BEARISH" if score <= -0.18 else "SIDEWAYS")
-        strength = _trend_strength(score)
-        rows = []
-        for m in (15, 30, 60):
-            d = all_details.get(m, {}) or {}
-            sc = float(d.get("score", 0) or 0) if d.get("ready") else 0.0
-            tr = "BULLISH" if sc >= 0.18 else ("BEARISH" if sc <= -0.18 else "SIDEWAYS")
-            rows.append(f"<b>{m}m:</b> {_direction_arrow(sc)} {tr} • Score {sc:+.3f}")
-        return (f"<b>{minutes}m MARKET TREND:</b> {current_trend}<br>"
-                f"<b>Score:</b> {score:+.3f} &nbsp; <b>Strength:</b> {strength}<br><br>"
-                f"<b>15m / 30m / 60m Direction:</b><br>{'<br>'.join(rows)}<br><br>"
-                f"<b>BULLISH score detail:</b> +0.18 to +0.44 = Bullish; +0.45 or above = Strong Bullish.<br>"
-                f"<b>BEARISH score detail:</b> -0.18 to -0.44 = Bearish; -0.45 or below = Strong Bearish.<br>"
-                f"<b>SIDEWAYS score detail:</b> -0.179 to +0.179 = Sideways / mixed.<br><br>"
-                f"<b>Score data:</b> CE OI shift {detail.get('ce_oi', 0):+.0f} • PE OI shift {detail.get('pe_oi', 0):+.0f}<br>"
-                f"<b>OI Change shift:</b> CE {detail.get('ce_oich', 0):+.0f} • PE {detail.get('pe_oich', 0):+.0f}<br>"
-                f"<b>कैसे पढ़ें:</b> 15m short-term, 30m intermediate और 60m broader intraday context है। तीनों arrows एक दिशा में हों तो alignment स्पष्ट है; अलग हों तो mixed context है।<br>"
-                f"<b>सावधानी:</b> यह rule-based indicator है, guaranteed prediction नहीं।")
+    def _score_explanation(minutes, score, detail):
+        if not detail.get("ready"):
+            return f'''<b>{minutes} मिनट:</b> historical data पर्याप्त नहीं है।<br><b>मतलब:</b> इस timeframe का score अभी reliable confirmation नहीं देता।<br><b>क्या देखें:</b> कम से कम {minutes}m history उपलब्ध होने के बाद score को price + OI change के साथ पढ़ें।'''
+        if score >= 0.18: bias = "Bullish-side bias"
+        elif score <= -0.18: bias = "Bearish-side bias"
+        else: bias = "Sideways / mixed bias"
+        return f'''<b>{minutes}m Score = {score:+.3f}</b><br><b>Interpretation:</b> {bias}<br>
+            <b>Score कैसे बनता है:</b> Put-vs-Call OI shift और OI-change shift को combine किया गया है।<br>
+            <b>Data:</b> CE OI shift {detail.get("ce_oi", 0):+.0f} • PE OI shift {detail.get("pe_oi", 0):+.0f}<br><b>OI Change shift:</b> CE {detail.get("ce_oich", 0):+.0f} • PE {detail.get("pe_oich", 0):+.0f}<br><br>
+            <b>क्या देखें:</b> 15m = short-term, 30m = intermediate, 60m = broader intraday context। तीनों एक दिशा में हों तो confirmation मजबूत समझा जा सकता है; अलग हों तो WAIT/MIXED context रखें।<br>
+            <b>सावधानी:</b> score rule-based indicator है, guaranteed prediction नहीं।'''
 
     def _four_factor_explanation(side, sig):
         if not sig: return f"{side} data उपलब्ध नहीं है।"
-        state = sig.get("state", "LOADING"); score = int(sig.get("score", 0) or 0)
-        price = float(sig.get("price_pct", 0) or 0); vol = float(sig.get("volume_pct", 0) or 0)
-        oi = float(sig.get("oi_pct", 0) or 0); oich = float(sig.get("oich", 0) or 0)
-        checks = sig.get("checks", {}) or {}
-        def ck(name, ok): return f"<b>{name}</b> {'🟢 ✓' if ok else '🔴 ✕'}"
+        state = sig.get("state", "LOADING"); score = int(sig.get("score", 0)); price = float(sig.get("price_pct", 0)); vol = float(sig.get("volume_pct", 0)); oi = float(sig.get("oi_pct", 0)); oich = float(sig.get("oich", 0))
         meanings = {
-            "LONG BUILDUP": "Price ↑ + Volume ↑ + OI ↑ + OI Change positive: fresh long-side participation pattern।",
-            "SHORT BUILDUP": "Price ↓ + Volume ↑ + OI ↑ + OI Change positive: fresh short-side participation pattern।",
-            "SHORT COVERING": "Price ↑ + OI ↓ + OI Change negative: short positions exiting / covering pattern।",
-            "LONG UNWINDING": "Price ↓ + OI ↓ + OI Change negative: long positions exiting pattern।",
-            "MIXED / NO CONFIRMATION": "चारों factors एक साफ direction में aligned नहीं हैं।"
+            "LONG BUILDUP": "Price ↑ + Volume ↑ + OI ↑ + session OI change positive: fresh long-side participation का pattern।",
+            "SHORT BUILDUP": "Price ↓ + Volume ↑ + OI ↑ + session OI change positive: fresh short-side participation का pattern।",
+            "SHORT COVERING": "Price ↑ + OI ↓ + OI change negative: shorts exit होने का pattern।",
+            "LONG UNWINDING": "Price ↓ + OI ↓ + OI change negative: longs exit होने का pattern।",
+            "MIXED / NO CONFIRMATION": "चारों factors एक ही दिशा में नहीं हैं; इसलिए साफ buildup/covering confirmation नहीं मिला।"
         }
-        return (f"<b>{side} 4-FACTOR CONFIRMATION</b><br><br>"
-                f"{ck('PRICE', checks.get('price', False))}<br>"
-                f"{ck('VOLUME', checks.get('volume', False))}<br>"
-                f"{ck('OI', checks.get('oi', False))}<br>"
-                f"{ck('OI CHANGE', checks.get('oich', False))}<br><br>"
-                f"<b>Matched:</b> {score}/4<br><b>State:</b> {state}<br><b>Bias:</b> {sig.get('bias', 'MIXED')}<br>"
-                f"<b>Meaning:</b> {meanings.get(state, 'Data अभी उपलब्ध/confirmed नहीं है।')}<br><br>"
-                f"<b>Price:</b> {price:+.2f}% &nbsp; <b>Volume:</b> {vol:+.1f}%<br>"
-                f"<b>OI:</b> {oi:+.2f}% &nbsp; <b>OI Change:</b> {oich:+.0f}<br><br>"
-                f"<b>कैसे पढ़ें:</b> 4/4 का अर्थ चारों requested conditions match हैं; 1/4 या 2/4 partial confirmation है, guaranteed entry नहीं।")
+        return f'''<b>{side}: {state} ({score}/4)</b><br>{meanings.get(state, "Data अभी loading है।")}<br><br>
+            <b>Price:</b> {price:+.2f}% &nbsp; <b>Volume:</b> {vol:+.1f}%<br>
+            <b>OI:</b> {oi:+.2f}% &nbsp; <b>OI Change:</b> {oich:+.0f}<br><br>
+            <b>{score}/4 का मतलब:</b> चार checks में {score} condition match हुई। 1/4 का अर्थ केवल एक condition match हुई — यह confirmation नहीं है।<br>
+            <b>क्या देखें:</b> अगले snapshot में price, volume, OI और OI-change का alignment तथा 15/30/60m context।<br>
+            <b>क्या करें:</b> केवल 1/4 या MIXED पर तुरंत trade signal न मानें; independent confirmation का इंतजार करें।'''
 
     st.markdown(r'''<style>
-    .stHorizontalBlock, [data-testid="stHorizontalBlock"], [data-testid="column"], [data-testid="stVerticalBlock"]{overflow:visible !important;}
-    [data-testid="column"]:has(.metric-hover-wrap:hover){position:relative;z-index:999999 !important;}
-    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:9990;}
+    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:20;}
     .metric-hover-main{position:relative;z-index:2;}
     .metric-hover-label{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.02em;}
     .metric-hover-value{font-size:22px;font-weight:850;color:#0f172a;margin-top:2px;}
-    .metric-hover-popup{position:absolute;left:0;bottom:calc(100% + 9px);top:auto;width:min(470px,calc(100vw - 28px));max-height:min(72vh,560px);overflow-y:auto;padding:15px 17px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 24px 70px rgba(0,0,0,.42);font-size:12px;line-height:1.58;opacity:0;visibility:hidden;transform:translateY(5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;z-index:1000000 !important;}
-    .metric-hover-wrap:hover{border-color:rgba(59,130,246,.45);box-shadow:0 7px 20px rgba(15,23,42,.10);z-index:1000000 !important;}
+    .metric-hover-popup{position:absolute;left:0;top:calc(100% + 7px);width:min(430px,calc(100vw - 42px));padding:14px 16px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 18px 45px rgba(15,23,42,.30);font-size:12px;line-height:1.55;opacity:0;visibility:hidden;transform:translateY(-5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;}
+    .metric-hover-wrap:hover{border-color:rgba(59,130,246,.45);box-shadow:0 7px 20px rgba(15,23,42,.10);}
     .metric-hover-wrap:hover .metric-hover-popup{opacity:1;visibility:visible;transform:translateY(0);}
     .metric-hover-popup b{color:#fff;}
     .ff-hover{min-height:96px;}
@@ -1551,7 +1517,7 @@ def main_trading_dashboard():
     ff_state = four_factor.get("state", "LOADING")
     ff_icon = {"BULLISH CONFIRMATION": "🟢", "BEARISH CONFIRMATION": "🔴", "MIXED / WAIT": "🟡"}.get(ff_state, "⏳")
     ff_color = {"BULLISH CONFIRMATION": "#166534", "BEARISH CONFIRMATION": "#991b1b", "MIXED / WAIT": "#92400e"}.get(ff_state, "#475569")
-    st.markdown(f"<div style='border:1px solid rgba(100,116,139,.25);border-left:6px solid {ff_color};border-radius:14px;padding:14px 18px;margin:8px 0 16px;background:rgba(148,163,184,.07);'><div style='font-size:18px;font-weight:800;'>{ff_icon} 4-FACTOR POSITION CONFIRMATION: {ff_state}</div><div style='font-size:12px;color:#64748b;margin-top:4px;'>PRICE + VOLUME + OI + OI CHANGE • CALL और PUT दोनों की directional confirmation • 4/4 = सभी conditions match</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='border:1px solid rgba(100,116,139,.25);border-left:6px solid {ff_color};border-radius:14px;padding:14px 18px;margin:8px 0 16px;background:rgba(148,163,184,.07);'><div style='font-size:18px;font-weight:800;'>{ff_icon} 4-FACTOR POSITION CONFIRMATION: {ff_state}</div><div style='font-size:12px;color:#64748b;margin-top:4px;'>Price + Volume + OI + OI Change • Same ATM strike • Historical snapshot confirmation</div></div>", unsafe_allow_html=True)
     if four_factor.get("ready"):
         ce_sig, pe_sig = four_factor.get("ce"), four_factor.get("pe")
         fc1, fc2, fc3 = st.columns(3)
@@ -1563,7 +1529,7 @@ def main_trading_dashboard():
             _hover_card("ATM PE", f"{pe_sig['state']} ({pe_sig['score']}/4)", _four_factor_explanation("PE", pe_sig), "atm-pe", "metric-hover-card ff-hover")
         st.caption("नोट: यह rule-based confirmation है; इसे अकेले trade signal या guaranteed prediction न मानें।")
     else:
-        st.info("🟡 4-factor confirmation: current ATM data उपलब्ध है; historical alignment उपलब्ध होते ही 15/30/60m comparison अपने आप मजबूत होगा।")
+        st.info("⏳ 4-factor confirmation के लिए कम से कम 15 मिनट की historical snapshot data चाहिए।")
 
     # SUPPORT / RESISTANCE 50-POINT ALERT
     alert_html = ""
@@ -1638,11 +1604,11 @@ def main_trading_dashboard():
     # METRICS ROW — hover explains exactly what each number means
     a, b, c, d, e, f = st.columns(6)
     with a:
-        _hover_card("NIFTY Spot", fmt_price(spot), f"<b>Selected Index:</b> {index_name}<br><b>Spot Price:</b> {fmt_price(spot)}", "nifty-spot")
+        _hover_card("NIFTY Spot", fmt_price(spot), "<b>Current NIFTY spot:</b> option-chain और trend calculations का underlying reference price।<br><b>क्या देखें:</b> Spot के साथ PCR, Max Pain, VIX और OI shifts को compare करें।", "nifty-spot")
     with b:
-        _hover_card("CALL OI", fmt_num(meta["call_oi"]), f"<b>Total CALL OI:</b> {fmt_num(meta['call_oi'])}<br><b>Resistance Price:</b> {fmt_price(resistance)}", "call-oi")
+        _hover_card("CALL OI", fmt_num(meta["call_oi"]), "<b>Total CALL Open Interest:</b> खुले हुए Call option contracts का कुल OI।<br><b>मतलब:</b> बड़े Call OI zones resistance/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "call-oi")
     with c:
-        _hover_card("PUT OI", fmt_num(meta["put_oi"]), f"<b>Total PUT OI:</b> {fmt_num(meta['put_oi'])}<br><b>Support Price:</b> {fmt_price(support)}", "put-oi")
+        _hover_card("PUT OI", fmt_num(meta["put_oi"]), "<b>Total PUT Open Interest:</b> खुले हुए Put option contracts का कुल OI।<br><b>मतलब:</b> बड़े Put OI zones support/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "put-oi")
     with d:
         pcr_value = (meta['put_oi']/meta['call_oi']) if meta['call_oi'] else 0
         _hover_card("PCR", f"{pcr_value:.2f}", _pcr_explanation(pcr_value), "pcr")
@@ -1659,9 +1625,9 @@ def main_trading_dashboard():
         d_val = details[mins]
         with col:
             if d_val["ready"]:
-                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val, details), f"score-{mins}m")
+                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val), f"score-{mins}m")
             else:
-                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val, details), f"score-{mins}m")
+                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val), f"score-{mins}m")
 
     x1, x2, x3, x4 = st.columns(4)
     x1.markdown(f"<div class='box entry'><b>ENTRY LEVEL</b><div class='big'>{fmt_price(entry)}</div><div class='muted'>{mode}</div></div>", unsafe_allow_html=True)
