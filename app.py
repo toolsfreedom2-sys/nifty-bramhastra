@@ -48,8 +48,6 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 APP_DIR = Path.home() / ".fyers_streamlit_nifty"
 APP_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = APP_DIR / "token.json"
-MARKET_CACHE_DIR = APP_DIR / "market_cache"
-MARKET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 REDIRECT_URI = "https://nifty-bramhastra.streamlit.app/"
 STATE = "nifty_oi_brahmastra"
@@ -186,11 +184,6 @@ if "has_subscription" not in st.session_state: st.session_state.has_subscription
 if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
 if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
-if "data_source" not in st.session_state: st.session_state.data_source = "NONE"
-if "cached_at" not in st.session_state: st.session_state.cached_at = None
-if "data_symbol" not in st.session_state: st.session_state.data_symbol = None
-if "closed_wide_refresh_attempted" not in st.session_state: st.session_state.closed_wide_refresh_attempted = False
-if "oi_history" not in st.session_state: st.session_state.oi_history = deque(maxlen=720)
 
 # =====================================================================
 # HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
@@ -238,133 +231,6 @@ def handle_google_login(btn_key):
 # PAGE 1: STYLISH LOGIN & SIGNUP PAGE
 # =====================================================================
 def login_signup_page():
-
-    # MODERN AUTH POPUP STYLE
-    st.markdown("""
-    <style>
-    /* Main auth popup/card */
-    div[data-testid="stTabs"] {
-        width: min(760px, 96vw) !important;
-        margin: 12px auto 0 auto !important;
-    }
-
-    div[data-testid="stTabs"] > div:first-child {
-        gap: 8px !important;
-        background: rgba(255,255,255,0.94) !important;
-        padding: 8px !important;
-        border-radius: 18px !important;
-        border: 1px solid rgba(0,0,0,0.08) !important;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.10) !important;
-    }
-
-    div[data-testid="stTabs"] button[role="tab"] {
-        min-height: 52px !important;
-        padding: 10px 20px !important;
-        border-radius: 13px !important;
-        font-size: 16px !important;
-        font-weight: 700 !important;
-        color: #334155 !important;
-        background: #f8fafc !important;
-        border: 1px solid #e2e8f0 !important;
-        transition: all .18s ease !important;
-    }
-
-    div[data-testid="stTabs"] button[role="tab"]:hover {
-        background: #eef2ff !important;
-        color: #1d4ed8 !important;
-        transform: translateY(-1px) !important;
-    }
-
-    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-        color: #ffffff !important;
-        background: linear-gradient(135deg, #2563eb, #4f46e5) !important;
-        border-color: transparent !important;
-        box-shadow: 0 6px 18px rgba(37,99,235,.28) !important;
-    }
-
-    /* Popup-like tab content */
-    div[data-testid="stTabContent"] {
-        background: rgba(255,255,255,0.98) !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 22px !important;
-        padding: 28px 30px 30px !important;
-        margin-top: 12px !important;
-        box-shadow: 0 18px 45px rgba(15,23,42,.14) !important;
-    }
-
-    /* Desktop input readability */
-    div[data-testid="stTextInput"] input {
-        color: #111827 !important;
-        -webkit-text-fill-color: #111827 !important;
-        background-color: #ffffff !important;
-        caret-color: #2563eb !important;
-        font-size: 16px !important;
-        font-weight: 500 !important;
-        min-height: 46px !important;
-        border-radius: 12px !important;
-    }
-
-    div[data-testid="stTextInput"] input::placeholder {
-        color: #64748b !important;
-        -webkit-text-fill-color: #64748b !important;
-        opacity: 1 !important;
-    }
-
-    /* Browser autofill */
-    div[data-testid="stTextInput"] input:-webkit-autofill,
-    div[data-testid="stTextInput"] input:-webkit-autofill:hover,
-    div[data-testid="stTextInput"] input:-webkit-autofill:focus {
-        -webkit-text-fill-color: #111827 !important;
-        caret-color: #2563eb !important;
-        transition: background-color 9999s ease-out 0s !important;
-    }
-
-    /* Larger, clearer action buttons */
-    div[data-testid="stButton"] > button {
-        min-height: 52px !important;
-        border-radius: 13px !important;
-        font-size: 16px !important;
-        font-weight: 750 !important;
-        letter-spacing: .1px !important;
-        padding: 10px 18px !important;
-        box-shadow: 0 5px 14px rgba(15,23,42,.10) !important;
-    }
-
-    div[data-testid="stButton"] > button:hover {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 8px 20px rgba(15,23,42,.16) !important;
-    }
-
-    /* Login primary action */
-    div[data-testid="stButton"] button[kind="primary"] {
-        min-height: 56px !important;
-        font-size: 17px !important;
-        border-radius: 14px !important;
-    }
-
-    /* Checkbox readability */
-    div[data-testid="stCheckbox"] label {
-        font-size: 14px !important;
-        font-weight: 600 !important;
-        color: #475569 !important;
-    }
-
-    @media (max-width: 700px) {
-        div[data-testid="stTabs"] {
-            width: 100% !important;
-        }
-        div[data-testid="stTabs"] button[role="tab"] {
-            min-height: 48px !important;
-            padding: 8px 10px !important;
-            font-size: 14px !important;
-        }
-        div[data-testid="stTabContent"] {
-            padding: 22px 18px 24px !important;
-            border-radius: 18px !important;
-        }
-    }
-    </style>
-    """, unsafe_allow_html=True)
     """Modern colorful authentication page for NIFTY OI Brahmāstra."""
     st.markdown(r'''<style>
     .stApp{background:radial-gradient(circle at 8% 12%,rgba(255,107,168,.30),transparent 25%),radial-gradient(circle at 92% 14%,rgba(86,204,242,.30),transparent 26%),radial-gradient(circle at 18% 92%,rgba(123,97,255,.28),transparent 28%),radial-gradient(circle at 88% 88%,rgba(255,180,76,.25),transparent 25%),linear-gradient(135deg,#111936 0%,#1b1550 38%,#162d68 68%,#0c1837 100%) !important;min-height:100vh!important}
@@ -382,12 +248,20 @@ def login_signup_page():
     .brand-logo{display:block;width:min(390px,82vw);height:auto;max-height:150px;object-fit:contain;filter:drop-shadow(0 12px 28px rgba(0,0,0,.35))}
     .brand-subtitle{text-align:center;color:#b9c2df;font-size:13px;margin:6px 0 20px}
     div[data-testid="stTabs"]{position:relative;z-index:3;padding:24px 28px 22px;border-radius:28px;background:rgba(12,18,45,.72);border:1px solid rgba(255,255,255,.12);box-shadow:0 28px 80px rgba(0,0,0,.34);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
-    div[data-testid="stTabs"] [role="tablist"]{justify-content:center;gap:7px;padding:5px;border:1px solid rgba(255,255,255,.10);border-radius:17px;background:rgba(255,255,255,.055);margin-bottom:18px}
-    div[data-testid="stTabs"] button[role="tab"]{flex:1;border:0!important;border-radius:13px!important;color:#f4f7ff!important;background:rgba(255,255,255,.035)!important;font-weight:850!important;font-size:18px!important;line-height:1.25!important;padding:14px 12px!important;min-height:52px!important;text-shadow:0 1px 2px rgba(0,0,0,.35)!important;transition:all .18s ease!important}div[data-testid="stTabs"] button[role="tab"]:hover{color:#fff!important;background:rgba(255,255,255,.10)!important}div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:#fff!important;background:linear-gradient(135deg,#ff4ecd,#7b61ff)!important;box-shadow:0 8px 24px rgba(123,97,255,.38)!important;text-shadow:0 1px 3px rgba(0,0,0,.45)!important}
+    /* Large popup-style Login / Sign Up / Reset navigation */
+div[data-testid="stTabs"]{width:100%!important;box-sizing:border-box!important;margin:0 auto!important;padding:24px 26px 28px!important;border-radius:32px!important;background:linear-gradient(145deg,rgba(13,20,50,.96),rgba(30,22,72,.94))!important;border:1px solid rgba(255,255,255,.18)!important;box-shadow:0 30px 90px rgba(0,0,0,.48),0 0 45px rgba(123,97,255,.16)!important}
+div[data-testid="stTabs"] [data-baseweb="tab-list"],div[data-testid="stTabs"] [role="tablist"]{display:flex!important;align-items:stretch!important;justify-content:stretch!important;gap:10px!important;padding:7px!important;margin:0 0 24px!important;border:1px solid rgba(255,255,255,.14)!important;border-radius:22px!important;background:rgba(3,8,25,.68)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 12px 30px rgba(0,0,0,.18)!important}
+div[data-testid="stTabs"] button[role="tab"]{flex:1 1 0!important;min-width:0!important;height:64px!important;min-height:64px!important;margin:0!important;padding:12px 8px!important;border:1px solid transparent!important;border-radius:17px!important;color:#dce5ff!important;background:rgba(255,255,255,.035)!important;font-weight:850!important;font-size:19px!important;line-height:1.15!important;letter-spacing:.15px!important;text-align:center!important;text-shadow:0 2px 5px rgba(0,0,0,.42)!important;transition:all .2s ease!important;cursor:pointer!important}
+div[data-testid="stTabs"] button[role="tab"]:hover{color:#fff!important;background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.14)!important;transform:translateY(-1px)!important}
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{color:#fff!important;background:linear-gradient(135deg,#ff43c8 0%,#845dff 52%,#3ccfff 100%)!important;border-color:rgba(255,255,255,.24)!important;box-shadow:0 10px 28px rgba(123,97,255,.42),inset 0 1px 0 rgba(255,255,255,.25)!important;text-shadow:0 2px 5px rgba(0,0,0,.5)!important;transform:translateY(-1px)!important}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none!important}
+div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none!important}
+div[data-testid="stTabs"] [data-baseweb="tab-panel"]{padding-top:4px!important}
+
     div[data-testid="stTextInput"] label,div[data-testid="stCheckbox"] label{color:#dce4ff!important;font-weight:650!important;font-size:13px!important}div[data-testid="stTextInput"] input{color:#111827!important;-webkit-text-fill-color:#111827!important;caret-color:#111827!important;background:#fff!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:14px!important;min-height:48px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)!important}div[data-testid="stTextInput"] input:focus{color:#111827!important;-webkit-text-fill-color:#111827!important;border-color:#8b78ff!important;box-shadow:0 0 0 2px rgba(123,97,255,.18),0 8px 25px rgba(0,0,0,.15)!important}div[data-testid="stTextInput"] input::placeholder{color:#6b7280!important;opacity:1!important}div[data-testid="stTextInput"] input:-webkit-autofill,div[data-testid="stTextInput"] input:-webkit-autofill:hover,div[data-testid="stTextInput"] input:-webkit-autofill:focus{ -webkit-text-fill-color:#111827!important;-webkit-box-shadow:0 0 0 1000px #fff inset!important;box-shadow:0 0 0 1000px #fff inset!important;}
     div.stButton>button{width:100%!important;min-height:48px!important;border:0!important;border-radius:14px!important;color:#fff!important;font-weight:800!important;font-size:14px!important;background:linear-gradient(100deg,#ff4ecd 0%,#7b61ff 52%,#3fcfff 100%)!important;box-shadow:0 12px 28px rgba(123,97,255,.28)!important;transition:transform .15s ease,box-shadow .15s ease!important}div.stButton>button:hover{transform:translateY(-2px);box-shadow:0 17px 34px rgba(123,97,255,.38)!important}
     .auth-heading{color:#fff;text-align:center;font-size:21px;font-weight:800;margin:0 0 4px}.auth-note{color:#9eabd0;text-align:center;font-size:12px;margin:0 0 16px}.divider{display:flex;align-items:center;gap:10px;margin:15px 0 12px;color:#7f8bb1;font-size:12px}.divider:before,.divider:after{content:"";height:1px;flex:1;background:rgba(255,255,255,.10)}.security-row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:18px}.security-pill{color:#aeb9dc;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:999px;padding:6px 10px;font-size:11px}.auth-footer{text-align:center;color:#6f7da6;font-size:11px;margin-top:17px}.auth-footer b{color:#a9b6e0}
-    @media(max-width:620px){.auth-brand{margin-top:2vh;padding:18px 16px}.brand-logo{width:min(320px,84vw);max-height:120px}div[data-testid="stTabs"]{padding:18px 15px 18px}div[data-testid="stTabs"] button[role="tab"]{font-size:15px!important;padding:12px 8px!important;min-height:48px!important}}
+    @media(max-width:620px){.auth-brand{margin-top:2vh;padding:18px 16px}.brand-logo{width:min(320px,84vw);max-height:120px}div[data-testid="stTabs"]{padding:18px 12px 22px!important;border-radius:25px!important}div[data-testid="stTabs"] [role="tablist"],div[data-testid="stTabs"] [data-baseweb="tab-list"]{gap:6px!important;padding:5px!important;border-radius:18px!important;margin-bottom:20px!important}div[data-testid="stTabs"] button[role="tab"]{font-size:14px!important;padding:10px 5px!important;height:54px!important;min-height:54px!important;border-radius:13px!important}}
     </style>''',unsafe_allow_html=True)
 
     # Decorative background + branding are rendered with Streamlit's native HTML renderer.
@@ -594,76 +468,13 @@ def main_trading_dashboard():
 
     api = fyers_client(FYERS_APP_ID, access_token)
 
-    def is_nse_market_open(dt=None):
-        """Approximate NSE cash-market session: Mon-Fri, 09:15-15:30 IST.
-        Exchange holidays are not embedded here; if FYERS returns live data it
-        still takes precedence during the session.
-        """
-        dt = dt or datetime.now()
-        if dt.weekday() >= 5:
-            return False
-        t = dt.time()
-        return t >= datetime.strptime("09:15", "%H:%M").time() and t <= datetime.strptime("15:30", "%H:%M").time()
-
-    def _cache_file(symbol):
-        safe = hashlib.sha256(str(symbol).encode("utf-8")).hexdigest()[:24]
-        return MARKET_CACHE_DIR / f"{safe}.json"
-
-    def save_market_cache(symbol, spot, rows, meta, history_response=None):
-        """Persist the last successful market snapshot and a compact intraday
-        OI history so the OI/OI-Change charts can still be viewed after restart."""
-        try:
-            history_rows = []
-            for ts, snap in st.session_state.get("oi_history", deque()):
-                history_rows.append({"ts": float(ts), "snap": snap})
-            payload = {
-                "saved_at": time.time(),
-                "saved_at_text": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
-                "symbol": symbol,
-                "spot": spot,
-                "rows": rows,
-                "meta": meta,
-                "history": history_response,
-                "oi_history": history_rows[-720:],
-            }
-            _cache_file(symbol).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
-
-    def load_market_cache(symbol):
-        """Load last successful snapshot. Invalid/corrupt cache is ignored."""
-        try:
-            path = _cache_file(symbol)
-            if not path.exists():
-                return None
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or not payload.get("rows"):
-                return None
-            return payload
-        except Exception:
-            return None
-
     def option_chain(api, symbol, strike_count):
-        """Request a wide chain so 15/20/25 ATM ranges are actually available."""
-        requested = max(10, int(strike_count))
-        attempts = [requested]
-        if requested < 50:
-            attempts.append(50)
-        last = None
-        for count in attempts:
-            data = {"symbol": symbol, "strikecount": count, "greeks": "1"}
-            try:
-                resp = api.optionchain(data=data)
-            except TypeError:
-                data["greeks"] = True
-                resp = api.optionchain(data=data)
-            except Exception as exc:
-                last = {"s": "error", "message": str(exc)}
-                continue
-            if isinstance(resp, dict) and str(resp.get("s", "")).lower() == "ok":
-                return resp
-            last = resp
-        return last or {"s": "error", "message": "Option chain unavailable"}
+        data = {"symbol": symbol, "strikecount": int(strike_count), "greeks": "1"}
+        try: return api.optionchain(data=data)
+        except TypeError:
+            data["greeks"] = True
+            return api.optionchain(data=data)
+        except Exception as exc: return {"s": "error", "message": str(exc)}
 
     def history(api, symbol):
         now = int(time.time())
@@ -685,7 +496,7 @@ def main_trading_dashboard():
             g = x.get("greeks") or {}
             rows.append({
                 "strike": sf(x.get("strike_price")), "type": typ, "ltp": sf(x.get("ltp")), "oi": si(x.get("oi")),
-                "oich": si(x.get("oich")), "oichp": sf(x.get("oichp")), "volume": si(x.get("volume", x.get("vol", x.get("v", 0)))), "iv": sf(x.get("iv", g.get("iv"))),
+                "oich": si(x.get("oich")), "oichp": sf(x.get("oichp")), "iv": sf(x.get("iv", g.get("iv"))),
                 "delta": sf(g.get("delta")), "theta": sf(g.get("theta"))
             })
         vix = data.get("indiavixData") or {}
@@ -700,61 +511,21 @@ def main_trading_dashboard():
         for s in strikes:
             c = ce.get(s, {}); p = pe.get(s, {})
             res.append({
-                "strike": s, "ce_ltp": c.get("ltp", 0), "ce_oi": c.get("oi", 0), "ce_oich": c.get("oich", 0), "ce_volume": c.get("volume", 0),
+                "strike": s, "ce_ltp": c.get("ltp", 0), "ce_oi": c.get("oi", 0), "ce_oich": c.get("oich", 0),
                 "ce_oichp": c.get("oichp", 0), "ce_iv": c.get("iv", 0), "ce_delta": c.get("delta", 0), "ce_theta": c.get("theta", 0),
                 "pe_theta": p.get("theta", 0), "pe_delta": p.get("delta", 0), "pe_iv": p.get("iv", 0), "pe_oichp": p.get("oichp", 0),
-                "pe_oich": p.get("oich", 0), "pe_oi": p.get("oi", 0), "pe_volume": p.get("volume", 0), "pe_ltp": p.get("ltp", 0)
+                "pe_oich": p.get("oich", 0), "pe_oi": p.get("oi", 0), "pe_ltp": p.get("ltp", 0)
             })
         return pd.DataFrame(res)
 
-    def take_snapshot(rows):
-        # Keep both absolute OI and the exchange/FYERS supplied session OI-change.
-        # The latter is important when only one historical snapshot is available
-        # (for example immediately after a restart or during a closed market).
-        return {
-            key_for(r["strike"], r["type"]): {
-                "oi": r["oi"],
-                "oich": r.get("oich", 0),
-                "oichp": r.get("oichp", 0),
-                "ltp": r["ltp"],
-                "volume": r.get("volume", 0)
-            } for r in rows
-        }
-
-    def restore_snapshot_history(raw_history):
-        """Restore compact persisted OI snapshots safely."""
-        try:
-            restored = deque(maxlen=720)
-            if isinstance(raw_history, list):
-                for item in raw_history[-720:]:
-                    if not isinstance(item, dict):
-                        continue
-                    ts = float(item.get("ts", 0))
-                    snap = item.get("snap")
-                    if ts > 0 and isinstance(snap, dict):
-                        restored.append((ts, snap))
-            if restored:
-                st.session_state.oi_history = restored
-        except Exception:
-            pass
-
-    def add_snapshot(rows, force=False):
-        """Keep one compact OI snapshot roughly every minute.
-        This is enough for 15/30/60 minute confirmation and the visual OI charts
-        while avoiding thousands of duplicate snapshots during live polling.
-        """
+    def take_snapshot(rows): return {key_for(r["strike"], r["type"]): {"oi": r["oi"], "oich": r["oich"], "ltp": r["ltp"]} for r in rows}
+    
+    def add_snapshot(rows):
         now = time.time()
-        if "oi_history" not in st.session_state:
-            st.session_state.oi_history = deque(maxlen=720)
-        if not force and st.session_state.oi_history:
-            last_ts = st.session_state.oi_history[-1][0]
-            if now - last_ts < 55:
-                return False
+        if "oi_history" not in st.session_state: st.session_state.oi_history = deque(maxlen=7200)
         st.session_state.oi_history.append((now, take_snapshot(rows)))
-        cutoff = now - 9 * 60 * 60
-        while st.session_state.oi_history and st.session_state.oi_history[0][0] < cutoff:
-            st.session_state.oi_history.popleft()
-        return True
+        cutoff = now - 75 * 60
+        while st.session_state.oi_history and st.session_state.oi_history[0][0] < cutoff: st.session_state.oi_history.popleft()
     
     def old_snapshot(minutes):
         target = time.time() - minutes * 60
@@ -771,7 +542,7 @@ def main_trading_dashboard():
         res = {}
         for r in rows:
             k = key_for(r["strike"], r["type"]); p = prev.get(k, {})
-            res[k] = {"oi_shift": r["oi"] - si(p.get("oi")), "oich_shift": r["oich"] - si(p.get("oich")), "ltp_shift": r["ltp"] - sf(p.get("ltp")), "volume_shift": r.get("volume", 0) - si(p.get("volume"))}
+            res[k] = {"oi_shift": r["oi"] - si(p.get("oi")), "oich_shift": r["oich"] - si(p.get("oich")), "ltp_shift": r["ltp"] - sf(p.get("ltp"))}
         return res, True
     
     def trend_data(rows):
@@ -788,367 +559,12 @@ def main_trading_dashboard():
                 score = 0.65 * ((pe_oi - ce_oi)/oi_den) + 0.35 * ((pe_oich - ce_oich)/ch_den)
                 w = TIME_WEIGHTS[mins]; weighted += w * score; total_weight += w
             else: score = 0
-            details[mins] = {"ready": ready, "score": score, "ce_oi": ce_oi, "pe_oi": pe_oi, "ce_oich": ce_oich, "pe_oich": pe_oich}
+            details[mins] = {"ready": ready, "score": score, "ce_oi": ce_oi, "pe_oi": pe_oi}
         if total_weight == 0: return "LOADING", 0, details
         score = weighted / total_weight
         if score >= 0.18: return "BULLISH", score, details
         elif score <= -0.18: return "BEARISH", score, details
         return "SIDEWAYS", score, details
-
-    # -----------------------------------------------------------------
-    # 4-FACTOR PRICE + VOLUME + OI + OI-CHANGE POSITION ENGINE
-    # -----------------------------------------------------------------
-    FOUR_FACTOR_PRICE_PCT = 0.05       # minimum price movement (%)
-    FOUR_FACTOR_VOLUME_PCT = 5.0       # volume movement (%)
-    FOUR_FACTOR_OI_PCT = 0.25          # interval OI movement (%)
-
-    def _pct_change(new, old):
-        old = float(old or 0)
-        new = float(new or 0)
-        if abs(old) < 1e-9:
-            return 0.0
-        return ((new - old) / abs(old)) * 100.0
-
-    def four_factor_state(current, previous):
-        """Classify one option contract using Price + Volume + OI + session OI Change.
-        Volume is cumulative session volume; therefore the comparison is against the
-        previous snapshot of the same contract, not against another strike.
-        """
-        if not current or not previous:
-            return {"state": "LOADING", "score": 0, "ready": False}
-
-        price_pct = _pct_change(current.get("ltp", 0), previous.get("ltp", 0))
-        volume_pct = _pct_change(current.get("volume", 0), previous.get("volume", 0))
-        oi_pct = _pct_change(current.get("oi", 0), previous.get("oi", 0))
-        oich = float(current.get("oich", 0) or 0)
-
-        price_up = price_pct >= FOUR_FACTOR_PRICE_PCT
-        price_down = price_pct <= -FOUR_FACTOR_PRICE_PCT
-        volume_up = volume_pct >= FOUR_FACTOR_VOLUME_PCT
-        volume_down = volume_pct <= -FOUR_FACTOR_VOLUME_PCT
-        volume_stable = not volume_up and not volume_down
-        oi_up = oi_pct >= FOUR_FACTOR_OI_PCT
-        oi_down = oi_pct <= -FOUR_FACTOR_OI_PCT
-
-        # User-requested four states. Volume must confirm buildup; for covering/
-        # unwinding, falling or stable volume is accepted as requested.
-        if price_up and volume_up and oi_up and oich > 0:
-            state = "LONG BUILDUP"
-        elif price_down and volume_up and oi_up and oich > 0:
-            state = "SHORT BUILDUP"
-        elif price_up and (volume_down or volume_stable) and oi_down and oich < 0:
-            state = "SHORT COVERING"
-        elif price_down and (volume_down or volume_stable) and oi_down and oich < 0:
-            state = "LONG UNWINDING"
-        else:
-            state = "MIXED / NO CONFIRMATION"
-
-        checks = {
-            "price": price_up or price_down,
-            "volume": volume_up if (price_up or price_down) and oi_up else (volume_down or volume_stable),
-            "oi": oi_up or oi_down,
-            "oich": (oich > 0) if oi_up else ((oich < 0) if oi_down else False),
-        }
-        score = sum(1 for v in checks.values() if v)
-        return {
-            "state": state,
-            "score": score,
-            "ready": True,
-            "price_pct": price_pct,
-            "volume_pct": volume_pct,
-            "oi_pct": oi_pct,
-            "oich": oich,
-            "volume_stable": volume_stable,
-        }
-
-    def _snapshot_for_minutes(minutes):
-        old = old_snapshot(minutes)
-        return old[1] if old else None
-
-    def four_factor_signal(rows, spot):
-        """Evaluate the ATM CE/PE contracts and combine them into a neutral market label.
-        This does not claim to identify FII/DII or 'smart money'; it is a rule-based
-        confirmation layer from the four requested market fields.
-        """
-        if spot is None or not rows:
-            return {"state": "LOADING", "ready": False, "ce": None, "pe": None, "minutes": None}
-
-        atm = min(rows, key=lambda r: abs(float(r.get("strike", 0)) - float(spot)))
-        ce = next((r for r in rows if r["type"] == "CE" and r["strike"] == atm["strike"]), None)
-        pe = next((r for r in rows if r["type"] == "PE" and r["strike"] == atm["strike"]), None)
-        # Prefer the longest ready history for a stable confirmation, otherwise use 15m.
-        for mins in (60, 30, 15):
-            prev = _snapshot_for_minutes(mins)
-            if prev and ce and pe:
-                ce_prev = prev.get(key_for(ce["strike"], "CE"))
-                pe_prev = prev.get(key_for(pe["strike"], "PE"))
-                if ce_prev and pe_prev:
-                    ce_sig = four_factor_state(ce, ce_prev)
-                    pe_sig = four_factor_state(pe, pe_prev)
-                    bullish_states = {"LONG BUILDUP", "SHORT COVERING"}
-                    bearish_states = {"SHORT BUILDUP", "LONG UNWINDING"}
-                    if ce_sig["state"] in bullish_states and pe_sig["state"] in bearish_states:
-                        market_state = "BULLISH CONFIRMATION"
-                    elif ce_sig["state"] in bearish_states and pe_sig["state"] in bullish_states:
-                        market_state = "BEARISH CONFIRMATION"
-                    else:
-                        market_state = "MIXED / WAIT"
-                    return {"state": market_state, "ready": True, "minutes": mins, "strike": atm["strike"], "ce": ce_sig, "pe": pe_sig}
-        return {"state": "WAITING FOR HISTORY", "ready": False, "strike": atm["strike"], "ce": None, "pe": None, "minutes": None}
-
-    # -----------------------------------------------------------------
-    # HOVER EXPLANATIONS — NUMBER -> MEANING -> WHAT TO CHECK
-    # -----------------------------------------------------------------
-    def _hover_card(label, value, detail_html, key=None, css_class="metric-hover-card"):
-        safe_key = str(key or label).replace(" ", "-").replace("/", "-")
-        st.markdown(
-            f'''<div class="metric-hover-wrap {css_class}" id="hover-{safe_key}">
-                <div class="metric-hover-main">
-                    <div class="metric-hover-label">{label}</div>
-                    <div class="metric-hover-value">{value}</div>
-                </div>
-                <div class="metric-hover-popup">{detail_html}</div>
-            </div>''',
-            unsafe_allow_html=True
-        )
-
-    def _pcr_explanation(pcr):
-        if pcr is None:
-            return "PCR data उपलब्ध नहीं है।"
-        if pcr < 0.70:
-            trend = "BEARISH"; zone = "PCR < 0.70"; detail = "Call OI के मुकाबले Put OI काफी कम है; call-heavy/resistance-side positioning दिख रही है।"
-        elif pcr < 1.00:
-            trend = "MILD BEARISH"; zone = "0.70 – 0.99"; detail = "Call OI Put OI से अधिक है; हल्का call-heavy bias है।"
-        elif pcr <= 1.30:
-            trend = "NEUTRAL / BALANCED"; zone = "1.00 – 1.30"; detail = "Put और Call OI अपेक्षाकृत balanced हैं; price और OI-change से confirmation देखें।"
-        else:
-            trend = "BULLISH / PUT-HEAVY"; zone = "> 1.30"; detail = "Put OI काफी अधिक है; support-side positioning मजबूत हो सकती है, लेकिन बहुत ऊंचा PCR crowded positioning भी दिखा सकता है।"
-        return (f"<b>Current PCR:</b> {pcr:.2f}<br><b>Trend:</b> {trend}<br><b>Current Zone:</b> {zone}<br>"
-                f"<b>Meaning:</b> {detail}<br><br><b>PCR Range Details</b><br>"
-                f"&lt; 0.70 → BEARISH<br>0.70 – 0.99 → MILD BEARISH<br>1.00 – 1.30 → NEUTRAL / BALANCED<br>"
-                f"&gt; 1.30 → BULLISH / PUT-HEAVY<br><br><b>Formula:</b> Total PUT OI ÷ Total CALL OI<br>"
-                f"<b>Note:</b> PCR अकेले BUY/SELL signal नहीं है।")
-
-    def _max_pain_explanation(pain, spot):
-        if pain is None or spot is None: return "Max Pain data उपलब्ध नहीं है।"
-        dist = float(spot) - float(pain); pct = (abs(dist) / float(spot) * 100.0) if spot else 0.0
-        if abs(dist) < 25: relation = "Spot Max Pain के बहुत पास है।"
-        elif dist > 0: relation = f"Spot Max Pain से {abs(dist):.0f} points ऊपर है।"
-        else: relation = f"Spot Max Pain से {abs(dist):.0f} points नीचे है।"
-        return (f"<b>Max Pain Price:</b> {pain:.0f}<br><b>Spot:</b> {spot:.2f}<br>"
-                f"<b>Distance:</b> {abs(dist):.0f} points ({pct:.2f}%)<br><b>Relation:</b> {relation}<br><br>"
-                f"<b>Meaning:</b> Current option OI के आधार पर calculated max-pain strike।<br>"
-                f"<b>Note:</b> इसे guaranteed target या future-price prediction न मानें।")
-
-    def _vix_explanation(vix, change_pct):
-        if vix is None: return "India VIX data उपलब्ध नहीं है।"
-        if vix < 15: level = "LOW VOLATILITY"; meaning = "बाजार की implied volatility अपेक्षाकृत कम है।"
-        elif vix < 20: level = "MODERATE VOLATILITY"; meaning = "बाजार में मध्यम volatility expectation है।"
-        elif vix < 25: level = "HIGH VOLATILITY"; meaning = "बाजार में ऊंची volatility expectation है।"
-        else: level = "VERY HIGH VOLATILITY"; meaning = "बाजार में बहुत ऊंची volatility expectation है।"
-        move = "VIX UP" if change_pct > 3 else ("VIX DOWN" if change_pct < -3 else "VIX STABLE")
-        return (f"<b>India VIX:</b> {vix:.2f}<br><b>Market Volatility:</b> {level}<br>"
-                f"<b>Change:</b> {change_pct:+.2f}% ({move})<br><b>Meaning:</b> {meaning}<br><br>"
-                f"<b>Range:</b> &lt;15 Low • 15–20 Moderate • 20–25 High • ≥25 Very High<br>"
-                f"<b>Note:</b> VIX direction NIFTY की direction की guarantee नहीं देता।")
-
-    def _trend_strength(score, ready=True):
-        if not ready: return "WAIT / INSUFFICIENT HISTORY"
-        a = abs(float(score))
-        if score >= 0.18: return "STRONG BULLISH" if a >= 0.30 else "BULLISH"
-        if score <= -0.18: return "STRONG BEARISH" if a >= 0.30 else "BEARISH"
-        return "SIDEWAYS / MIXED" if a < 0.10 else "WEAK SIDEWAYS"
-
-    def _direction_arrow(score, ready=True):
-        if not ready: return "⏸"
-        if score >= 0.18: return "↑"
-        if score <= -0.18: return "↓"
-        return "→"
-
-    def _score_explanation(minutes, score, detail, all_details=None):
-        if not detail.get("ready"):
-            arrows = ""
-            if all_details:
-                arrows = "<br><b>Trend Direction:</b> " + " • ".join(
-                    f"{m}m {_direction_arrow(all_details[m].get('score',0), all_details[m].get('ready',False))}" for m in (15,30,60))
-            return (f"<b>{minutes} MINUTE MARKET TREND</b><br><b>Trend:</b> WAIT<br><b>Score:</b> --<br>"
-                    f"<b>Strength:</b> WAIT / INSUFFICIENT HISTORY{arrows}<br><br>"
-                    f"<b>Reason:</b> {minutes}m historical data पर्याप्त नहीं है।")
-        trend = "BULLISH" if score >= 0.18 else ("BEARISH" if score <= -0.18 else "SIDEWAYS")
-        arrows = ""
-        if all_details:
-            arrows = "<br><b>3-TIMEFRAME DIRECTION:</b> " + " • ".join(
-                f"{m}m {_direction_arrow(all_details[m].get('score',0), all_details[m].get('ready',False))}" for m in (15,30,60))
-        return (f"<b>{minutes} MINUTE MARKET TREND</b><br><b>Trend:</b> {trend} {_direction_arrow(score)}<br>"
-                f"<b>Score:</b> {score:+.3f}<br><b>Strength:</b> {_trend_strength(score)}{arrows}<br><br>"
-                f"<b>SCORE DETAILS</b><br>CE OI Shift: {detail.get('ce_oi',0):+.0f}<br>"
-                f"PE OI Shift: {detail.get('pe_oi',0):+.0f}<br>CE OI Change Shift: {detail.get('ce_oich',0):+.0f}<br>"
-                f"PE OI Change Shift: {detail.get('pe_oich',0):+.0f}<br><br>"
-                f"<b>Reading:</b> 15m short-term, 30m intermediate और 60m broader intraday context है।")
-
-    def _four_factor_explanation(side, sig):
-        if not sig: return f"{side} data उपलब्ध नहीं है।"
-        state = sig.get("state", "LOADING")
-        score = int(sig.get("score", 0))
-        price = float(sig.get("price_pct", 0)); vol = float(sig.get("volume_pct", 0)); oi = float(sig.get("oi_pct", 0)); oich = float(sig.get("oich", 0))
-        meanings = {
-            "LONG BUILDUP": "Price ↑ + Volume ↑ + OI ↑ + session OI change positive: fresh long-side participation का pattern।",
-            "SHORT BUILDUP": "Price ↓ + Volume ↑ + OI ↑ + session OI change positive: fresh short-side participation का pattern।",
-            "SHORT COVERING": "Price ↑ + OI ↓ + OI change negative: shorts exit होने का pattern।",
-            "LONG UNWINDING": "Price ↓ + OI ↓ + OI change negative: longs exit होने का pattern।",
-            "MIXED / NO CONFIRMATION": "चारों factors एक ही दिशा में नहीं हैं; साफ confirmation नहीं मिला।"
-        }
-        checks = [
-            ("PRICE", price > 0 if state in ("LONG BUILDUP","SHORT COVERING") else price < 0 if state in ("SHORT BUILDUP","LONG UNWINDING") else False),
-            ("VOLUME", vol > 0),
-            ("OI", oi > 0 if state in ("LONG BUILDUP","SHORT BUILDUP") else oi < 0 if state in ("SHORT COVERING","LONG UNWINDING") else False),
-            ("OI CHANGE", oich > 0 if state in ("LONG BUILDUP","SHORT BUILDUP") else oich < 0 if state in ("SHORT COVERING","LONG UNWINDING") else False),
-        ]
-        rows = "<br>".join(f"{'🟢 ✓' if ok else '🔴 ✕'} <b>{name}</b>" for name, ok in checks)
-        return (f"<b>ATM {side} — 4 CONDITION CHECK</b><br>{rows}<br><br><b>Matched:</b> {score}/4<br>"
-                f"<b>State:</b> {state}<br><b>Meaning:</b> {meanings.get(state, 'Data loading है।')}<br><br>"
-                f"<b>Raw Details:</b><br>Price: {price:+.2f}%<br>Volume: {vol:+.1f}%<br>OI: {oi:+.2f}%<br>OI Change: {oich:+.0f}")
-
-    st.markdown(r'''<style>
-    /* FINAL POPUP FIX
-       IMPORTANT: the detail panel stays IN FLOW.
-       It expands the Streamlit column/card itself instead of floating
-       outside a parent container. This prevents clipping by tabs,
-       columns, vertical blocks and viewport boundaries. */
-
-    .metric-hover-wrap{
-        position:relative !important;
-        width:100%;
-        min-height:78px;
-        border:1px solid rgba(100,116,139,.18);
-        border-radius:14px;
-        background:rgba(255,255,255,.78);
-        padding:10px 13px;
-        box-sizing:border-box;
-        cursor:help;
-        margin-bottom:8px;
-        z-index:50 !important;
-        overflow:visible !important;
-        height:auto !important;
-        max-height:none !important;
-    }
-
-    .metric-hover-main{
-        position:relative;
-        z-index:2;
-    }
-
-    .metric-hover-label{
-        font-size:12px;
-        font-weight:700;
-        color:#64748b;
-        text-transform:uppercase;
-        letter-spacing:.02em;
-    }
-
-    .metric-hover-value{
-        font-size:22px;
-        font-weight:850;
-        color:#0f172a;
-        margin-top:2px;
-    }
-
-    /* CLOSED: occupies no extra space */
-    .metric-hover-popup{
-        position:relative !important;
-        left:auto !important;
-        right:auto !important;
-        top:auto !important;
-        bottom:auto !important;
-        width:100% !important;
-        max-width:100% !important;
-        box-sizing:border-box;
-
-        margin:0 !important;
-        padding:0 !important;
-
-        max-height:0 !important;
-        overflow:hidden !important;
-
-        border:1px solid transparent !important;
-        border-radius:14px !important;
-        background:#0f172a !important;
-        color:#f8fafc !important;
-
-        font-size:13px !important;
-        line-height:1.65 !important;
-        word-break:normal;
-        overflow-wrap:anywhere;
-
-        opacity:0;
-        visibility:hidden;
-        transform:none !important;
-
-        pointer-events:none;
-        z-index:60 !important;
-
-        transition:
-            max-height .20s ease,
-            opacity .14s ease,
-            padding .14s ease,
-            margin .14s ease,
-            visibility .14s ease;
-    }
-
-    /* OPEN: popup becomes part of the card's normal height */
-    .metric-hover-wrap:hover .metric-hover-popup{
-        max-height:600px !important;
-        margin:9px 0 0 0 !important;
-        padding:15px 17px !important;
-
-        border-color:rgba(255,255,255,.14) !important;
-        opacity:1;
-        visibility:visible;
-        pointer-events:auto;
-    }
-
-    .metric-hover-popup b{
-        color:#fff !important;
-    }
-
-    .ff-hover{
-        min-height:96px;
-    }
-
-    /* Absolutely no clipping/containment on Streamlit layout ancestors */
-    div[data-testid="column"],
-    div[data-testid="stHorizontalBlock"],
-    div[data-testid="stVerticalBlock"],
-    div[data-testid="stVerticalBlockBorderWrapper"],
-    div[data-testid="stElementContainer"],
-    div[data-testid="stMarkdownContainer"],
-    div[data-testid="stAppViewContainer"],
-    div[data-testid="stAppViewBlockContainer"],
-    .block-container{
-        overflow:visible !important;
-        clip-path:none !important;
-        mask:none !important;
-        -webkit-mask:none !important;
-        contain:none !important;
-    }
-
-    /* Remove clipping/stacking conditions that can affect descendants */
-    .metric-hover-wrap,
-    .metric-hover-wrap *{
-        clip-path:none !important;
-    }
-
-    @media (max-width:700px){
-        .metric-hover-popup{
-            font-size:13px !important;
-            line-height:1.6 !important;
-        }
-
-        .metric-hover-wrap:hover .metric-hover-popup{
-            max-height:70vh !important;
-        }
-    }
-    </style>''',unsafe_allow_html=True)
 
     def max_pain(df):
         if df.empty: return None
@@ -1197,366 +613,89 @@ def main_trading_dashboard():
         if not data: return
         st.line_chart(pd.DataFrame(data).set_index("Time")[["Open", "High", "Low", "Close"]], height=400)
 
-    def _oi_chart_history(current_rows, window_minutes):
-        """Return baseline/current snapshots for the selected OI chart window."""
-        hist = list(st.session_state.get("oi_history", deque()))
-        if not hist:
-            return None, None, None, None
-        hist.sort(key=lambda x: x[0])
-        end_ts, end_snap = hist[-1]
-        if window_minutes is None:
-            start_ts, start_snap = hist[0]
+    def double_bar(df, oi=True, spot=None, show_oi_change=False):
+        if df.empty: return
+        cols = ["strike", "ce_oi", "pe_oi", "ce_oich", "pe_oich"]
+        temp = df[cols].copy()
+        temp["total"] = temp["ce_oi"].abs() + temp["pe_oi"].abs()
+        temp = temp.nlargest(min(15, len(temp)), "total").sort_values("strike")
+
+        atm_strike = float(df["strike"].astype(float).iloc[(df["strike"].astype(float) - float(spot)).abs().argmin()]) if spot is not None else 0
+
+        if oi:
+            long_df = temp.melt(id_vars=["strike"], value_vars=["ce_oi", "pe_oi"], var_name="Side", value_name="Value")
+            long_df["Side"] = long_df["Side"].map({"ce_oi": "CALL OI", "pe_oi": "PUT OI"})
+            title = "CALL / PUT OI — Double Bar"
         else:
-            target = end_ts - window_minutes * 60
-            chosen = None
-            for item in hist:
-                if item[0] <= target:
-                    chosen = item
-                else:
-                    break
-            if chosen is None:
-                start_ts, start_snap = hist[0]
-            else:
-                start_ts, start_snap = chosen
-        return start_ts, start_snap, end_ts, end_snap
+            long_df = temp.melt(id_vars=["strike"], value_vars=["ce_oich", "pe_oich"], var_name="Side", value_name="Value")
+            long_df["Side"] = long_df["Side"].map({"ce_oich": "CALL OI Change", "pe_oich": "PUT OI Change"})
+            title = "CALL / PUT OI Change — Double Bar"
 
-    def _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike):
-        """Build rows for OI/OI-Change charts.
-
-        Change is calculated from the selected Time Window baseline. If the
-        selected window has no earlier snapshot (common after a fresh restart),
-        the current FYERS ``oich`` value is used instead of showing a misleading
-        zero. This also keeps Show OI Change useful while the app is displaying
-        last-session cached data.
-        """
-        records = []
-        for _, r in df.iterrows():
-            strike = float(r["strike"])
-            if strike < min_strike or strike > max_strike:
-                continue
-            for side, oi_col, label in (("PUT", "pe_oi", "Put OI"), ("CALL", "ce_oi", "Call OI")):
-                typ = "PE" if side == "PUT" else "CE"
-                k = key_for(strike, typ)
-                cur = end_snap.get(k, {}) if isinstance(end_snap, dict) else {}
-                base = start_snap.get(k, {}) if isinstance(start_snap, dict) else {}
-                current_oi = float(cur.get("oi", r[oi_col]) or 0)
-                start_oi = float(base.get("oi", 0) or 0)
-                baseline_exists = bool(base) and start_oi > 0
-                window_change = current_oi - start_oi if baseline_exists else 0.0
-                fyers_oich = float(cur.get("oich", r.get("pe_oich" if typ == "PE" else "ce_oich", 0)) or 0)
-                # Use historical-window delta when available; otherwise retain the
-                # real FYERS session OI-change instead of displaying a fake zero.
-                change = window_change if baseline_exists else fyers_oich
-                records.append({
-                    "strike": strike,
-                    "Side": side,
-                    "Label": label,
-                    "OI": current_oi,
-                    "StartOI": start_oi if baseline_exists else max(current_oi - fyers_oich, 0),
-                    "Change": change,
-                    "ChangeAbs": abs(change),
-                    "ATM": abs(strike - atm_strike) < 0.1,
-                    "CompactOI": fmt_bar_value(current_oi),
-                    "CompactStart": fmt_bar_value(start_oi if baseline_exists else max(current_oi - fyers_oich, 0)),
-                    "CompactChange": ("+" if change >= 0 else "") + fmt_bar_value(change),
-                })
-        return pd.DataFrame(records)
-
-    def _oi_video_style_chart(chart_df, spot, title, show_oi_change=True, metric="OI"):
-        """Render the two-bar-per-strike visual reliably.
-
-        The chart uses one embedded Vega-Lite dataset for every layer. OI is
-        always current OI; OI Change is the selected-window change (or FYERS
-        session change when no historical baseline exists).
-        """
-        if chart_df.empty:
-            st.info("इस समय OI chart के लिए पर्याप्त strike data उपलब्ध नहीं है।")
-            return
-
-        chart_df = chart_df.copy()
-        for col in ["strike", "OI", "StartOI", "Change"]:
-            chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").fillna(0.0)
-        chart_df["strike_label"] = chart_df["strike"].map(lambda x: f"{x:.0f}")
-        chart_df = chart_df.sort_values(["strike", "Side"]).reset_index(drop=True)
-
-        combined = []
-        for strike, g in chart_df.groupby("strike", sort=True):
-            c = g[g["Side"] == "CALL"]
-            p = g[g["Side"] == "PUT"]
-            c = c.iloc[0] if not c.empty else None
-            p = p.iloc[0] if not p.empty else None
-            combined.append({
-                "strike_label": f"{float(strike):.0f}",
-                "strike": float(strike),
-                "Call OI": float(c["OI"]) if c is not None else 0.0,
-                "Put OI": float(p["OI"]) if p is not None else 0.0,
-                "Call Start OI": float(c["StartOI"]) if c is not None else 0.0,
-                "Put Start OI": float(p["StartOI"]) if p is not None else 0.0,
-                "Call OI Change": float(c["Change"]) if c is not None else 0.0,
-                "Put OI Change": float(p["Change"]) if p is not None else 0.0,
-                "Call OI Text": c["CompactOI"] if c is not None else "0",
-                "Put OI Text": p["CompactOI"] if p is not None else "0",
-                "Call Change Text": c["CompactChange"] if c is not None else "0",
-                "Put Change Text": p["CompactChange"] if p is not None else "0",
-            })
-        combined_df = pd.DataFrame(combined)
-
-        value_field = "OI" if metric == "OI" else "Change"
-        value_title = "Open Interest" if metric == "OI" else "OI Change"
-        values = chart_df.to_dict("records")
-
+        st.markdown(f"### {title}")
         spec = {
             "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-            "width": "container",
-            "height": 430,
-            "data": {"values": values},
-            "resolve": {"scale": {"y": "shared"}},
+            "width": "container", "height": 430,
+            "transform": [
+                {"calculate": ("abs(datum.Value) >= 10000000 ? format(datum.Value/10000000, '.2f') + ' Cr' : abs(datum.Value) >= 100000 ? format(datum.Value/100000, '.2f') + ' L' : abs(datum.Value) >= 1000 ? format(datum.Value/1000, '.2f') + ' K' : format(datum.Value, ',.0f')"), "as": "CompactValue"}
+            ],
             "layer": [
                 {
-                    "mark": {"type": "bar", "size": 18, "cornerRadiusTopLeft": 3, "cornerRadiusTopRight": 3},
+                    "transform": [
+                        {"joinaggregate": [{"op": "max", "field": "Value", "as": "MaxVal"}, {"op": "min", "field": "Value", "as": "MinVal"}]},
+                        {"calculate": "min(0, datum.MinVal)", "as": "ChartMin"}, {"calculate": "max(0, datum.MaxVal)", "as": "ChartMax"},
+                        {"filter": "datum.Side == 'CALL OI' || datum.Side == 'CALL OI Change'"}
+                    ],
+                    "mark": {"type": "bar", "opacity": 0.12, "tooltip": False},
                     "encoding": {
-                        "x": {"field": "strike_label", "type": "ordinal", "sort": {"field": "strike", "order": "ascending"}, "axis": {"title": "Strike Price", "labelAngle": -55, "labelFontSize": 10}},
-                        "xOffset": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"]}},
-                        "y": {"field": value_field, "type": "quantitative", "title": value_title, "axis": {"format": ".2s"}},
-                        "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#22c55e", "#ef4444"]}, "legend": {"title": None, "orient": "bottom"}},
+                        "x": {"field": "strike", "type": "ordinal", "title": "Strike Price", "sort": "ascending"},
+                        "y": {"field": "ChartMax", "type": "quantitative"}, "y2": {"field": "ChartMin"},
+                        "color": {"condition": {"test": f"datum.strike <= {atm_strike}", "value": "#22c55e"}, "value": "#ef4444"}
+                    }
+                },
+                {
+                    "mark": {"type": "bar", "cornerRadiusTopLeft": 3, "cornerRadiusTopRight": 3},
+                    "encoding": {
+                        "x": {"field": "strike", "type": "ordinal", "title": "Strike Price", "sort": "ascending"},
+                        "xOffset": {"field": "Side", "type": "nominal"},
+                        "y": {"field": "Value", "type": "quantitative", "title": "Open Interest / OI Change"},
+                        "color": {
+                            "field": "Side", "type": "nominal",
+                            "scale": {"domain": (["CALL OI", "PUT OI"] if oi else ["CALL OI Change", "PUT OI Change"]), "range": ["#22c55e", "#ef4444"]},
+                            "legend": {"title": None, "orient": "top"}
+                        },
                         "tooltip": [
                             {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
-                            {"field": "Side", "type": "nominal", "title": "Side"},
-                            {"field": "CompactOI", "type": "nominal", "title": "Current OI"},
-                            {"field": "CompactStart", "type": "nominal", "title": "Start OI"},
-                            {"field": "CompactChange", "type": "nominal", "title": "OI Change"}
+                            {"field": "Side", "type": "nominal", "title": "Type"},
+                            {"field": "CompactValue", "type": "nominal", "title": "Value"}
                         ]
                     }
                 }
             ]
         }
+        st.vega_lite_chart(long_df, spec={**spec, "data": {"name": "source"}}, use_container_width=True)
 
-        # OI Change must be a true diverging chart: positive bars rise above zero
-        # and negative bars fall below zero. This makes every selected time window
-        # visually comparable instead of stretching the chart around current OI.
-        if metric != "OI":
-            spec["layer"].append({
-                "mark": {"type": "rule", "color": "#64748b", "strokeWidth": 1.2},
-                "encoding": {"y": {"datum": 0}}
-            })
+        if spot is not None:
+            s1, s2 = st.columns(2)
+            s1.metric("🟢 LIVE ATM SPOT", fmt_price(spot))
+            s2.metric("🟢 ATM STRIKE", f"{atm_strike:.0f}")
 
-        # Show the real selected-window/session OI change directly above OI bars.
-        if metric == "OI" and show_oi_change:
-            spec["layer"].append({
-                "mark": {"type": "text", "dy": -7, "fontSize": 9, "fontWeight": 700},
-                "encoding": {
-                    "x": {"field": "strike_label", "type": "ordinal", "sort": {"field": "strike", "order": "ascending"}},
-                    "xOffset": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"]}},
-                    "y": {"field": "OI", "type": "quantitative"},
-                    "text": {"field": "CompactChange", "type": "nominal"},
-                    "color": {"field": "Side", "type": "nominal", "scale": {"domain": ["PUT", "CALL"], "range": ["#166534", "#991b1b"]}, "legend": None}
-                }
-            })
-
-        # One invisible strike-wide layer gives a single combined Call+Put popup.
-        if not combined_df.empty:
-            if metric == "OI":
-                top = combined_df[["Call OI", "Put OI"]].max(axis=1).clip(lower=1)
-                bottom = pd.Series([0.0] * len(combined_df))
-            else:
-                max_abs = combined_df[["Call OI Change", "Put OI Change"]].abs().max(axis=1).clip(lower=1)
-                top = max_abs
-                bottom = -max_abs
-            hover_df = combined_df.copy()
-            hover_df["hover_top"] = top
-            hover_df["hover_bottom"] = bottom
-            spec["layer"].append({
-                "data": {"values": hover_df.to_dict("records")},
-                "mark": {"type": "rect", "opacity": 0.001},
-                "encoding": {
-                    "x": {"field": "strike_label", "type": "ordinal", "sort": {"field": "strike", "order": "ascending"}},
-                    "y": {"field": "hover_bottom", "type": "quantitative"},
-                    "y2": {"field": "hover_top"},
-                    "tooltip": [
-                        {"field": "strike", "type": "quantitative", "title": "Strike", "format": ".0f"},
-                        {"field": "Call OI Text", "type": "nominal", "title": "CALL OI"},
-                        {"field": "Put OI Text", "type": "nominal", "title": "PUT OI"},
-                        {"field": "Call Change Text", "type": "nominal", "title": "CALL OI Change"},
-                        {"field": "Put Change Text", "type": "nominal", "title": "PUT OI Change"},
-                        {"field": "Call Start OI", "type": "quantitative", "title": "CALL Start OI", "format": ".2s"},
-                        {"field": "Put Start OI", "type": "quantitative", "title": "PUT Start OI", "format": ".2s"}
-                    ]
-                }
-            })
-
-        if spot is not None and not chart_df.empty:
-            atm = float(chart_df.iloc[(chart_df["strike"] - float(spot)).abs().argmin()]["strike"])
-            spec["layer"].append({
-                "data": {"values": [{"atm_label": f"{atm:.0f}"}]},
-                "mark": {"type": "rule", "strokeDash": [5, 4], "strokeWidth": 1.5, "color": "#475569"},
-                "encoding": {"x": {"field": "atm_label", "type": "ordinal", "sort": {"field": "atm_label", "order": "ascending"}}}
-            })
-
-        st.vega_lite_chart(spec, use_container_width=True)
-
-    def oi_visual_dashboard(df, spot, index_name):
-        """Only the two requested visual modules: Open Interest and OI Change."""
-        if df.empty or spot is None:
-            return
-
-        hist = list(st.session_state.get("oi_history", deque()))
-        if not hist:
-            st.info("OI visual data के लिए snapshot history अभी बन रही है।")
-            return
-        hist.sort(key=lambda x: x[0])
-        min_ts, max_ts = hist[0][0], hist[-1][0]
-
-        # The history is intentionally retained for several hours so every
-        # requested time window can actually change the baseline.
-        available_minutes = max(0, int((max_ts - min_ts) / 60))
-
-        tab_oi, tab_change = st.tabs(["📈 Open Interest", "📊 OI Change"])
-
-        def common_controls(prefix, default_window="Last 15 mins"):
-            c1, c2, c3 = st.columns([1.0, 1.35, 1.15])
-            with c1:
-                mode = st.radio("Range", ["Intraday", "Custom Range"], horizontal=True, key=f"{prefix}_range_mode")
-            with c2:
-                window_options = [
-                    ("Last 5 mins", 5), ("Last 10 mins", 10), ("Last 15 mins", 15),
-                    ("Last 30 mins", 30), ("Last 1 Hr", 60), ("Last 2 Hrs", 120),
-                    ("Last 3 Hrs", 180), ("Full Day", None)
-                ]
-                labels = [x[0] for x in window_options]
-                default_idx = labels.index(default_window) if default_window in labels else 2
-                choice = st.selectbox("Time Window", labels, index=default_idx, key=f"{prefix}_window")
-            with c3:
-                show_change = st.checkbox("Show OI Change", value=True, key=f"{prefix}_show_change")
-
-            if mode == "Custom Range" and max_ts > min_ts:
-                chosen = st.slider(
-                    "Time Range",
-                    min_value=datetime.fromtimestamp(min_ts),
-                    max_value=datetime.fromtimestamp(max_ts),
-                    value=(datetime.fromtimestamp(min_ts), datetime.fromtimestamp(max_ts)),
-                    format="HH:mm",
-                    key=f"{prefix}_time_slider"
-                )
-                return chosen[0].timestamp(), chosen[1].timestamp(), show_change
-
-            selected_minutes = dict(window_options)[choice]
-            # The end of every window is always the latest available snapshot.
-            # If the requested duration is longer than the stored history, use
-            # the oldest available snapshot rather than silently reusing the
-            # current snapshot. This makes the displayed baseline explicit.
-            if selected_minutes is None:
-                start_ts = min_ts
-            else:
-                target = max_ts - selected_minutes * 60
-                candidates = [ts for ts, _ in hist if ts <= target]
-                start_ts = candidates[-1] if candidates else min_ts
-            return start_ts, max_ts, show_change
-
-        def strike_controls(prefix):
-            c1, c2 = st.columns([1.05, 2.5])
-            with c1:
-                levels = st.radio(
-                    "Strikes above/below ATM",
-                    [5, 10, 15, 20, 25, "Show All"],
-                    index=1,
-                    horizontal=True,
-                    key=f"{prefix}_atm_range"
-                )
-            with c2:
-                st.caption("25 strikes तक का data उपलब्ध है; ATM range चुनने पर chart उसी के अनुसार बदलेगा।")
-
-            atm = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
-            unique_strikes = sorted(df["strike"].astype(float).unique())
-            if len(unique_strikes) >= 2:
-                step = float(np.median(np.diff(unique_strikes)))
-            else:
-                step = 50.0
-
-            if levels == "Show All":
-                min_strike = min(unique_strikes)
-                max_strike = max(unique_strikes)
-            else:
-                # Filter by the actual number of strikes on each side, rather
-                # than using an approximate price range. This makes 15/20/25
-                # work even if strike spacing changes.
-                n = int(levels)
-                below = [x for x in unique_strikes if x < atm][-n:]
-                above = [x for x in unique_strikes if x > atm][:n]
-                selected = sorted(set(below + [atm] + above))
-                if selected:
-                    min_strike, max_strike = min(selected), max(selected)
-                else:
-                    min_strike, max_strike = atm - n * step, atm + n * step
-            return min_strike, max_strike
-
-        def get_snapshots(start_ts, end_ts):
-            hist_sorted = sorted(hist, key=lambda x: x[0])
-            start_snap = hist_sorted[0][1]
-            end_snap = hist_sorted[-1][1]
-            for ts, snap in hist_sorted:
-                if ts <= start_ts:
-                    start_snap = snap
-                if ts <= end_ts:
-                    end_snap = snap
-                else:
-                    break
-            return start_snap, end_snap
-
-        # OPEN INTEREST FIRST
-        with tab_oi:
-            st.markdown(
-                f"### Open Interest <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>",
-                unsafe_allow_html=True
-            )
-            start_ts, end_ts, show_change = common_controls("oi", "Last 15 mins")
-            min_strike, max_strike = strike_controls("oi")
-            start_snap, end_snap = get_snapshots(start_ts, end_ts)
-            atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
-            chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
-            _oi_video_style_chart(chart_df, spot, "Open Interest", show_change, metric="OI")
-            st.caption(f"Selected OI baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Bars use the current OI snapshot; labels show the selected-window OI change.")
-
-            total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "OI"].sum()) if not chart_df.empty else 0
-            total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "OI"].sum()) if not chart_df.empty else 0
-            call_change = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
-            put_change = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("TOTAL CALL OI", fmt_bar_value(total_call))
-            m2.metric("TOTAL PUT OI", fmt_bar_value(total_put))
-            m3.metric("PCR", f"{(total_put / total_call if total_call else 0):.2f}")
-            m4.metric("OI CHANGE", fmt_bar_value(call_change + put_change))
-            st.caption(
-                f"Baseline: {datetime.fromtimestamp(start_ts).strftime('%I:%M %p')} → "
-                f"Current: {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • "
-                f"History available: {available_minutes} min"
-            )
-
-        # OI CHANGE SECOND
-        with tab_change:
-            st.markdown(
-                f"### OI Change <span style='color:#64748b;font-size:13px'>• {index_name} {spot:.1f}</span>",
-                unsafe_allow_html=True
-            )
-            start_ts, end_ts, show_change = common_controls("oichange", "Last 15 mins")
-            min_strike, max_strike = strike_controls("oichange")
-            start_snap, end_snap = get_snapshots(start_ts, end_ts)
-            atm_strike = float(df.iloc[(df["strike"] - float(spot)).abs().argmin()]["strike"])
-            chart_df = _oi_chart_rows(df, start_snap, end_snap, min_strike, max_strike, atm_strike)
-            _oi_video_style_chart(chart_df, spot, "OI Change", show_change, metric="CHANGE")
-            st.caption(f"Selected OI Change baseline: {datetime.fromtimestamp(start_ts).strftime("%H:%M:%S")} → {datetime.fromtimestamp(end_ts).strftime("%H:%M:%S")}. Every bar = current OI − selected-window baseline OI; positive above zero, negative below zero.")
-
-            total_call = float(chart_df.loc[chart_df["Side"] == "CALL", "Change"].sum()) if not chart_df.empty else 0
-            total_put = float(chart_df.loc[chart_df["Side"] == "PUT", "Change"].sum()) if not chart_df.empty else 0
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("CALL OI CHANGE", fmt_bar_value(total_call))
-            m2.metric("PUT OI CHANGE", fmt_bar_value(total_put))
-            m3.metric("WINDOW START", datetime.fromtimestamp(start_ts).strftime("%H:%M"))
-            m4.metric("WINDOW END", datetime.fromtimestamp(end_ts).strftime("%H:%M"))
-            st.caption(
-                f"Baseline: {datetime.fromtimestamp(start_ts).strftime('%I:%M %p')} → "
-                f"Current: {datetime.fromtimestamp(end_ts).strftime('%I:%M %p')} • "
-                f"History available: {available_minutes} min"
-            )
+        if show_oi_change and oi:
+            ch = temp.set_index("strike")[["ce_oich", "pe_oich"]].copy()
+            ch.columns = ["CALL OI Change", "PUT OI Change"]
+            st.caption("OI Change — K / L / Cr format:")
+            ch_display = ch.copy()
+            for col in ch_display.columns:
+                ch_display[col] = ch_display[col].map(lambda x: ("+" if float(x) >= 0 else "") + fmt_bar_value(x))
+            
+            def style_mini_chain(row):
+                styles = [''] * len(row)
+                strike = float(row.name)
+                for i, col in enumerate(row.index):
+                    if 'CALL' in col and strike <= atm_strike: styles[i] = 'background-color: rgba(34, 197, 94, 0.15)'
+                    elif 'PUT' in col and strike >= atm_strike: styles[i] = 'background-color: rgba(239, 68, 68, 0.15)'
+                return styles
+                
+            st.dataframe(ch_display.style.apply(style_mini_chain, axis=1), use_container_width=True, height=min(360, 45 + len(ch_display) * 35))
 
     # TOP HEADER (Mobile, Tablet & Desktop Friendly)
     head_col1, head_col2, head_col3 = st.columns([2, 2, 1])
@@ -1574,96 +713,25 @@ def main_trading_dashboard():
     st.divider()
 
     now = time.time()
-    market_open = is_nse_market_open()
-
-    # Always recover the latest successful snapshot first. This is what keeps
-    # yesterday/last-session data visible while NSE is closed or FYERS is quiet.
-    # If the user changes index, discard the previous index from the in-memory
-    # view and load that index's own cache instead.
-    if st.session_state.data_symbol != symbol:
-        st.session_state.live_chain = None
-        st.session_state.live_history = None
-        st.session_state.data_source = "NONE"
-        st.session_state.cached_at = None
-        st.session_state.data_symbol = symbol
-        st.session_state.closed_wide_refresh_attempted = False
-
-    if st.session_state.live_chain is None:
-        cached = load_market_cache(symbol)
-        if cached:
-            st.session_state.live_chain = (cached.get("spot"), cached.get("rows", []), cached.get("meta", {}))
-            st.session_state.live_history = cached.get("history")
-            st.session_state.data_symbol = symbol
-            st.session_state.data_source = "CACHED"
-            st.session_state.cached_at = cached.get("saved_at_text")
-            restore_snapshot_history(cached.get("oi_history", []))
-            # If an older cache has no history, seed it with the current cached snapshot.
-            if not st.session_state.oi_history and cached.get("rows"):
-                st.session_state.oi_history.append((float(cached.get("saved_at", time.time())), take_snapshot(cached.get("rows", []))))
-
-    # During market hours, keep polling FYERS for fresh data. Outside market
-    # hours we first use the persistent cache, but if no cache exists (for
-    # example after a fresh deployment/restart), make one fallback FYERS call.
-    # FYERS may still return the last available option-chain snapshot even
-    # though the exchange itself is closed. That snapshot is then cached.
-    should_fetch = market_open and (now - st.session_state.last_fetch >= 0.9)
-    # If the persisted cache was created with the old 10-strike version, make
-    # one wider FYERS request even while the market is closed. If FYERS does
-    # not provide a wider historical chain, the old cache is retained safely.
-    cached_unique_strikes = 0
-    if st.session_state.live_chain:
+    if now - st.session_state.last_fetch >= 0.9:
         try:
-            cached_unique_strikes = len(set(float(r.get("strike", 0)) for r in st.session_state.live_chain[1] if r.get("strike") is not None))
-        except Exception:
-            cached_unique_strikes = 0
-    fallback_closed_fetch = (
-        not market_open
-        and not st.session_state.closed_wide_refresh_attempted
-        and (st.session_state.live_chain is None or cached_unique_strikes < 35)
-        and (now - st.session_state.last_fetch >= 2.0)
-    )
-
-    if should_fetch or fallback_closed_fetch:
-        if fallback_closed_fetch:
-            st.session_state.closed_wide_refresh_attempted = True
-        try:
-            resp = option_chain(api, symbol, 50)
+            resp = option_chain(api, symbol, strike_count)
             spot, rows, meta, err = parse_chain(resp)
             if not err and rows:
-                hist_resp = history(api, symbol)
                 st.session_state.live_chain = (spot, rows, meta)
-                st.session_state.live_history = hist_resp
+                st.session_state.live_history = history(api, symbol)
                 st.session_state.last_fetch = now
-                st.session_state.data_source = "LIVE" if market_open else "LAST_FYERS"
-                st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-                st.session_state.data_symbol = symbol
-                snapshot_added = add_snapshot(rows)
-                # Save the cache when the OI history advances, and also on the first
-                # successful fetch so closed-market fallback always has a snapshot.
-                if snapshot_added or st.session_state.data_source != "LIVE":
-                    save_market_cache(symbol, spot, rows, meta, hist_resp)
-        except Exception:
-            st.session_state.last_fetch = now
+                add_snapshot(rows)
+            else:
+                if st.session_state.live_chain is None:
+                    st.info("ℹ️ आज मार्केट बंद है या डेटा उपलब्ध नहीं है।")
+        except Exception as e:
+            pass
 
-    if not market_open and st.session_state.live_chain is None:
-        # No persistent cache and FYERS did not return a last snapshot.
-        # Keep the dashboard honest rather than fabricating values.
-        st.info("ℹ️ मार्केट बंद है। इस Index का पिछला snapshot अभी उपलब्ध नहीं मिला। जैसे ही FYERS का पुराना/नया data मिलेगा, उसे यहाँ दिखाकर cache कर दिया जाएगा।")
-
-    st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE / LAST DATA")
+    st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE")
     if not st.session_state.live_chain:
-        st.info("डेटा उपलब्ध होने की प्रतीक्षा करें...")
+        st.info("डेटा लोड हो रहा है, कृपया प्रतीक्षा करें...")
         return
-
-    # Clear source/status banner so the user can immediately distinguish live
-    # data from the last available market snapshot.
-    if st.session_state.data_source == "LIVE" and market_open:
-        st.success("🟢 LIVE MARKET DATA — FYERS से वर्तमान data आ रहा है।")
-    elif st.session_state.data_source == "LAST_FYERS":
-        st.info(f"🔵 LAST AVAILABLE FYERS DATA — Market बंद है, इसलिए FYERS से मिला अंतिम उपलब्ध snapshot दिखाया जा रहा है: {st.session_state.cached_at}.")
-    else:
-        cache_text = st.session_state.cached_at or "पिछला उपलब्ध snapshot"
-        st.info(f"🔵 MARKET CLOSED / LAST AVAILABLE DATA — अभी live market data नहीं है। नीचे दिख रहा data अंतिम उपलब्ध snapshot है: {cache_text}. Market खुलते ही dashboard live data पर अपने आप switch होगा।")
         
     spot, rows, meta = st.session_state.live_chain
     df = make_df(rows)
@@ -1671,169 +739,34 @@ def main_trading_dashboard():
     support, resistance = support_resistance(df, spot)
     pain = max_pain(df)
     entry, exit_level, mode = entry_exit(spot, support, resistance, score)
-    four_factor = four_factor_signal(rows, spot)
 
-    # 4-factor confirmation panel
-    ff_state = four_factor.get("state", "LOADING")
-    ff_icon = {"BULLISH CONFIRMATION": "🟢", "BEARISH CONFIRMATION": "🔴", "MIXED / WAIT": "🟡"}.get(ff_state, "⏳")
-    ff_color = {"BULLISH CONFIRMATION": "#166534", "BEARISH CONFIRMATION": "#991b1b", "MIXED / WAIT": "#92400e"}.get(ff_state, "#475569")
-    st.markdown(f"<div style='border:1px solid rgba(100,116,139,.25);border-left:6px solid {ff_color};border-radius:14px;padding:14px 18px;margin:8px 0 16px;background:rgba(148,163,184,.07);'><div style='font-size:18px;font-weight:800;'>{ff_icon} 4-FACTOR POSITION CONFIRMATION: {ff_state}</div><div style='font-size:12px;color:#64748b;margin-top:4px;'>Price + Volume + OI + OI Change • Same ATM strike • Historical snapshot confirmation</div></div>", unsafe_allow_html=True)
-    if four_factor.get("ready"):
-        ce_sig, pe_sig = four_factor.get("ce"), four_factor.get("pe")
-        fc1, fc2, fc3 = st.columns(3)
-        with fc1:
-            st.markdown(f"**ATM Strike:** {four_factor.get('strike', 0):.0f}  \n**History:** {four_factor.get('minutes')}m")
-        with fc2:
-            _hover_card("ATM CALL", f"{ce_sig['score']}/4 MATCH", _four_factor_explanation("CALL", ce_sig), "atm-call", "metric-hover-card ff-hover")
-        with fc3:
-            _hover_card("ATM PUT", f"{pe_sig['score']}/4 MATCH", _four_factor_explanation("PUT", pe_sig), "atm-put", "metric-hover-card ff-hover")
-        st.caption("नोट: यह rule-based confirmation है; इसे अकेले trade signal या guaranteed prediction न मानें।")
-    else:
-        st.info("⏳ 4-factor confirmation के लिए कम से कम 15 मिनट की historical snapshot data चाहिए।")
-
-    # -----------------------------------------------------------------
-    # ALERTS — KEEP S/R ALERT SEPARATE FROM THE 50-POINT SWING ENGINE
-    # -----------------------------------------------------------------
-    # 1) MARKET STATUS: informational only; it does not itself create an alert.
-    status_bg = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "SIDEWAYS": "#eab308", "LOADING": "#64748b"}.get(trend, "#64748b")
-    status_fg = "white" if trend != "SIDEWAYS" else "#422006"
-    st.markdown(
-        f"<div style='border:2px solid {status_bg};border-radius:14px;padding:12px 18px;margin:8px 0 12px;background:rgba(148,163,184,.07);'>"
-        f"<div style='font-size:20px;font-weight:800;'>📊 MARKET STATUS</div>"
-        f"<div style='font-size:18px;font-weight:800;color:{status_bg};'>TREND: {trend}</div>"
-        f"<div style='font-size:17px;font-weight:700;'>SCORE: {score:+.2f}</div></div>",
-        unsafe_allow_html=True
-    )
-
-    # 2) EXISTING S/R ALERT — intentionally independent of the swing setup.
+    # SUPPORT / RESISTANCE 50-POINT ALERT
     alert_html = ""
     if spot and support and resistance:
         if abs(spot - support) <= 15 and score >= -0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🟢 S/R BUY ALERT<br><span style='font-size:15px;'>Support के पास | Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</span></div>"
+            alert_html = f"<div class='blinking-alert' style='background-color:#dcfce7; color:#166534; border-color:#22c55e;'>🚀 S/R BUY ALERT: Support ({support:.0f}) के पास! Entry: {support:.0f} | Target: {support+50:.0f} | SL: {support-20:.0f}</div>"
         elif abs(spot - resistance) <= 15 and score <= 0.10:
-            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>🔴 S/R SELL ALERT<br><span style='font-size:15px;'>Resistance के पास | Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</span></div>"
-    if alert_html:
-        st.markdown(alert_html, unsafe_allow_html=True)
+            alert_html = f"<div class='blinking-alert' style='background-color:#fee2e2; color:#991b1b; border-color:#ef4444;'>⚠️ S/R SELL ALERT: Resistance ({resistance:.0f}) के पास! Entry: {resistance:.0f} | Target: {resistance-50:.0f} | SL: {resistance+20:.0f}</div>"
+    if alert_html: st.markdown(alert_html, unsafe_allow_html=True)
 
-    # 3) 50-POINT SWING SETUP + ACTUAL SWING ENTRY ALERT
-    #    IMPORTANT: the setup itself NEVER becomes a BUY/SELL alert.
-    #    A Swing BUY/SELL alert is shown only after all entry conditions match.
+    # SWING HIGH / LOW FAST SCALP ALERT (NEW FEATURE)
     swing_low, swing_high = get_swing_levels(st.session_state.live_history)
-    swing_setup_html = ""
-    swing_entry_alert_html = ""
+    swing_alert_html = ""
+    if spot and swing_low and swing_high:
+        if abs(spot - swing_low) <= 15 and score >= -0.05:
+            swing_alert_html = f"<div class='blinking-alert' style='background-color:#e0f2fe; color:#0369a1; border-color:#0284c7;'>⚡ SWING BUY ALERT (Fast Scalp): Local Swing Low ({swing_low:.0f}) के पास! Entry: {swing_low:.0f} | Target: {swing_low+50:.0f} | SL: {swing_low-15:.0f}</div>"
+        elif abs(spot - swing_high) <= 15 and score <= 0.05:
+            swing_alert_html = f"<div class='blinking-alert' style='background-color:#fef3c7; color:#92400e; border-color:#f59e0b;'>⚡ SWING SELL ALERT (Fast Scalp): Local Swing High ({swing_high:.0f}) के पास! Entry: {swing_high:.0f} | Target: {swing_high-50:.0f} | SL: {swing_high+15:.0f}</div>"
+    if swing_alert_html: st.markdown(swing_alert_html, unsafe_allow_html=True)
 
-    if (spot is not None and support is not None and resistance is not None
-            and swing_low is not None and swing_high is not None):
-        zone_low = min(float(support), float(resistance))
-        zone_high = max(float(support), float(resistance))
-        swing_range = float(swing_high) - float(swing_low)
-        swings_inside_zone = (
-            zone_low <= float(swing_low)
-            and float(swing_high) <= zone_high
-            and float(swing_low) < float(swing_high)
-        )
-
-        if swing_range < 50:
-            swing_setup_html = (
-                f"<div style='border:2px solid #94a3b8;border-radius:12px;padding:14px;margin:8px 0;"
-                f"background:rgba(148,163,184,.08);'>"
-                f"<div style='font-size:18px;font-weight:800;'>⚪ NO 50-POINT SETUP</div>"
-                f"<div>Swing Range: <b>{swing_range:.0f} Points</b></div>"
-                f"<div>Required: <b>50+ Points</b></div></div>"
-            )
-        elif not swings_inside_zone:
-            swing_setup_html = (
-                f"<div style='border:2px solid #94a3b8;border-radius:12px;padding:14px;margin:8px 0;"
-                f"background:rgba(148,163,184,.08);'>"
-                f"<div style='font-size:18px;font-weight:800;'>⚪ NO 50-POINT SETUP</div>"
-                f"<div>Swing Range: <b>{swing_range:.0f} Points</b></div>"
-                f"<div>Required: <b>50+ Points</b> + both swing points inside S/R zone</div></div>"
-            )
-        else:
-            setup_valid = swing_range >= 50 and swings_inside_zone
-            zone_status = "INSIDE S/R"
-            setup_status = "🟢 VALID SETUP" if setup_valid else "⚪ NO VALID SETUP"
-            swing_setup_html = (
-                f"<div style='border:2px solid #16a34a;border-radius:12px;padding:14px;margin:8px 0;"
-                f"background:rgba(22,163,74,.06);'>"
-                f"<div style='font-size:19px;font-weight:800;'>⚡ SWING OPPORTUNITY SETUP</div>"
-                f"<div style='margin-top:6px;'><b>S/R ZONE</b></div>"
-                f"<div>Support&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{support:.0f}</b></div>"
-                f"<div>Resistance&nbsp;&nbsp;&nbsp; <b>{resistance:.0f}</b></div>"
-                f"<div style='margin-top:6px;'><b>SWING RANGE</b></div>"
-                f"<div>Swing Low&nbsp;&nbsp;&nbsp;&nbsp; <b>{swing_low:.0f}</b></div>"
-                f"<div>Swing High&nbsp;&nbsp;&nbsp; <b>{swing_high:.0f}</b></div>"
-                f"<div>Range&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{swing_range:.0f} Points ✅</b></div>"
-                f"<div style='margin-top:6px;'>Zone Status&nbsp;&nbsp; <b>✅ {zone_status}</b></div>"
-                f"<div>Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{trend}</b></div>"
-                f"<div>Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>{score:+.2f}</b></div>"
-                f"<div style='margin-top:6px;'>SETUP STATUS&nbsp; <b>{setup_status}</b></div>"
-                f"</div>"
-            )
-
-            # ACTUAL SWING ENTRY CONDITIONS:
-            # BUY = valid 50+ setup + bullish trend + positive score + spot near Swing Low.
-            # SELL = valid 50+ setup + bearish trend + negative score + spot near Swing High.
-            swing_buy_condition = (
-                setup_valid
-                and trend == "BULLISH"
-                and score > 0
-                and abs(float(spot) - float(swing_low)) <= 15
-            )
-            swing_sell_condition = (
-                setup_valid
-                and trend == "BEARISH"
-                and score < 0
-                and abs(float(spot) - float(swing_high)) <= 15
-            )
-
-            if swing_buy_condition:
-                swing_entry_alert_html = (
-                    f"<div class='blinking-alert' style='background-color:#dcfce7;color:#166534;border-color:#16a34a;'>"
-                    f"🚨 SWING BUY ALERT"
-                    f"<div style='font-size:15px;margin-top:6px;text-align:left;'>"
-                    f"Entry Price : <b>{swing_low:.0f}</b><br>"
-                    f"Exit Price&nbsp;&nbsp; : <b>{swing_high:.0f}</b><br>"
-                    f"Potential&nbsp;&nbsp; : <b>+{swing_range:.0f} Points</b><br><br>"
-                    f"Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{trend}</b><br>"
-                    f"Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{score:+.2f}</b><br><br>"
-                    f"Status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>🟢 ENTRY CONDITION MET</b>"
-                    f"</div></div>"
-                )
-            elif swing_sell_condition:
-                swing_entry_alert_html = (
-                    f"<div class='blinking-alert' style='background-color:#fee2e2;color:#991b1b;border-color:#dc2626;'>"
-                    f"🚨 SWING SELL ALERT"
-                    f"<div style='font-size:15px;margin-top:6px;text-align:left;'>"
-                    f"Entry Price : <b>{swing_high:.0f}</b><br>"
-                    f"Exit Price&nbsp;&nbsp; : <b>{swing_low:.0f}</b><br>"
-                    f"Potential&nbsp;&nbsp; : <b>+{swing_range:.0f} Points</b><br><br>"
-                    f"Trend&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{trend}</b><br>"
-                    f"Score&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>{score:+.2f}</b><br><br>"
-                    f"Status&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; : <b>🔴 ENTRY CONDITION MET</b>"
-                    f"</div></div>"
-                )
-
-    if swing_setup_html:
-        st.markdown(swing_setup_html, unsafe_allow_html=True)
-    if swing_entry_alert_html:
-        st.markdown(swing_entry_alert_html, unsafe_allow_html=True)
-
-    # METRICS ROW — concise popups with the requested values and interpretations.
+    # METRICS ROW (Includes India VIX & Change %)
     a, b, c, d, e, f = st.columns(6)
-    with a:
-        _hover_card("NIFTY Spot", fmt_price(spot), f"<b>Selected Index:</b> {index_name}<br><b>Spot Price:</b> {fmt_price(spot)}", "nifty-spot")
-    with b:
-        _hover_card("CALL OI", fmt_num(meta["call_oi"]), f"<b>Total CALL OI:</b> {fmt_num(meta['call_oi'])}<br><b>Resistance:</b> {fmt_price(resistance)}", "call-oi")
-    with c:
-        _hover_card("PUT OI", fmt_num(meta["put_oi"]), f"<b>Total PUT OI:</b> {fmt_num(meta['put_oi'])}<br><b>Support:</b> {fmt_price(support)}", "put-oi")
-    with d:
-        pcr_value = (meta['put_oi']/meta['call_oi']) if meta['call_oi'] else 0
-        _hover_card("PCR", f"{pcr_value:.2f}", _pcr_explanation(pcr_value), "pcr")
-    with e:
-        _hover_card("MAX PAIN", f"{pain:.0f}" if pain else "-", _max_pain_explanation(pain, spot), "max-pain")
-    with f:
-        _hover_card("India VIX", f"{meta['vix']:.2f}" if meta.get('vix') is not None else "-", _vix_explanation(meta.get('vix'), meta.get('vix_change_pct',0)), "india-vix")
+    a.metric("NIFTY Spot", fmt_price(spot))
+    b.metric("CALL OI", fmt_num(meta["call_oi"]))
+    c.metric("PUT OI", fmt_num(meta["put_oi"]))
+    d.metric("PCR", f"{(meta['put_oi']/meta['call_oi'] if meta['call_oi'] else 0):.2f}")
+    e.metric("MAX PAIN", f"{pain:.0f}" if pain else "-")
+    f.metric("India VIX", f"{meta['vix']:.2f}", delta=f"{meta['vix_change_pct']:.2f}%")
 
     bg = {"BULLISH": "#16a34a", "BEARISH": "#dc2626", "SIDEWAYS": "#eab308"}.get(trend, "#6b7280")
     st.markdown(f"<div class='trend' style='background:{bg};color:white'>TREND: {trend} | SCORE: {score:+.3f}</div>", unsafe_allow_html=True)
@@ -1842,17 +775,8 @@ def main_trading_dashboard():
     for col, mins in zip((c15, c30, c60), (15, 30, 60)):
         d_val = details[mins]
         with col:
-            if d_val["ready"]:
-                local_trend = "BULLISH" if d_val["score"] >= 0.18 else ("BEARISH" if d_val["score"] <= -0.18 else "SIDEWAYS")
-                local_arrow = _direction_arrow(d_val["score"])
-                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f} {local_arrow}", _score_explanation(mins, d_val['score'], d_val, details), f"score-{mins}m")
-                st.markdown(f"<div style='text-align:center;font-weight:800;margin-top:-5px;'>{local_arrow} {local_trend} • {_trend_strength(d_val['score'])}</div>", unsafe_allow_html=True)
-            else:
-                _hover_card(f"⏱️ {mins}m Score", "WAIT ⏸", _score_explanation(mins, 0, d_val, details), f"score-{mins}m")
-                st.markdown("<div style='text-align:center;font-weight:800;margin-top:-5px;'>WAIT ⏸</div>", unsafe_allow_html=True)
-
-    direction_html = " • ".join(f"<b>{m}m</b> {_direction_arrow(details[m].get('score',0), details[m].get('ready',False))}" for m in (15,30,60))
-    st.markdown(f"<div style='border:1px solid rgba(100,116,139,.2);border-radius:12px;padding:9px 14px;margin:4px 0 12px;background:rgba(148,163,184,.06);text-align:center;'>📍 <b>3-TIMEFRAME TREND INDICATOR</b> &nbsp; {direction_html}</div>", unsafe_allow_html=True)
+            if d_val["ready"]: st.metric(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}")
+            else: st.info(f"{mins}m history loading...")
 
     x1, x2, x3, x4 = st.columns(4)
     x1.markdown(f"<div class='box entry'><b>ENTRY LEVEL</b><div class='big'>{fmt_price(entry)}</div><div class='muted'>{mode}</div></div>", unsafe_allow_html=True)
@@ -1863,10 +787,10 @@ def main_trading_dashboard():
     st.subheader("🕯️ High-Level Price Chart")
     candle_chart(st.session_state.live_history, spot)
 
-    # ONLY TWO REQUESTED VISUAL MODULES — OI Change + Open Interest
-    oi_visual_dashboard(df, spot, index_name)
+    double_bar(df, oi=True, spot=spot, show_oi_change=show_bar_oichange)
+    double_bar(df, oi=False, spot=spot, show_oi_change=True)
 
-    st.subheader("🔗 LIVE OPTION CHAIN (PRICE + VOLUME + OI + OI CHANGE + DELTA & THETA)")
+    st.subheader("🔗 LIVE OPTION CHAIN (DELTA & THETA)")
     atm_strike = float(df["strike"].iloc[(df["strike"] - spot).abs().argmin()])
     out = []
     for _, r in df.iterrows():
@@ -1874,8 +798,8 @@ def main_trading_dashboard():
         label = f"🟢 {s:.0f}" if (support and abs(s-support)<0.1) else (f"🔴 {s:.0f}" if (resistance and abs(s-resistance)<0.1) else f"{s:.0f}")
         out.append({
             "CALL THETA": f"{r['ce_theta']:.2f}", "CALL DELTA": f"{r['ce_delta']:.2f}", "CALL IV": f"{r['ce_iv']:.1f}", "CALL LTP": f"{r['ce_ltp']:.2f}",
-            "CALL OI": fmt_num(r["ce_oi"]), "CALL ΔOI": fmt_num(r["ce_oich"]), "CALL VOL": fmt_num(r["ce_volume"]), "STRIKE": label,
-            "PUT ΔOI": fmt_num(r["pe_oich"]), "PUT OI": fmt_num(r["pe_oi"]), "PUT VOL": fmt_num(r["pe_volume"]),
+            "CALL OI": fmt_num(r["ce_oi"]), "CALL ΔOI": fmt_num(r["ce_oich"]), "STRIKE": label,
+            "PUT ΔOI": fmt_num(r["pe_oich"]), "PUT OI": fmt_num(r["pe_oi"]),
             "PUT LTP": f"{r['pe_ltp']:.2f}", "PUT IV": f"{r['pe_iv']:.1f}", "PUT DELTA": f"{r['pe_delta']:.2f}", "PUT THETA": f"{r['pe_theta']:.2f}"
         })
     
