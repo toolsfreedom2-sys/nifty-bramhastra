@@ -821,16 +821,12 @@ def main_trading_dashboard():
             return None
         return None
 
-    def history(api, symbol, minutes=180, include_oi=False, from_ts=None, to_ts=None):
+    def history(api, symbol, minutes=180, include_oi=False):
         now = int(time.time())
-        end_ts = int(to_ts) if to_ts is not None else now - 60
-        start_ts = int(from_ts) if from_ts is not None else end_ts - int(minutes) * 60
-        if start_ts >= end_ts:
-            start_ts = end_ts - max(60, int(minutes) * 60)
         data = {
             "symbol": symbol, "resolution": "1", "date_format": "0",
-            "range_from": str(start_ts),
-            "range_to": str(end_ts),
+            "range_from": str(now - int(minutes) * 60),
+            "range_to": str(now - 60),
             "cont_flag": "1"
         }
         if include_oi:
@@ -840,27 +836,15 @@ def main_trading_dashboard():
         except Exception as exc:
             return {"s": "error", "message": str(exc)}
 
-    def _today_market_open_epoch():
-        """Return today's NSE cash-market open (09:15 IST) as epoch."""
-        try:
-            from zoneinfo import ZoneInfo
-            tz = ZoneInfo("Asia/Kolkata")
-            now = datetime.now(tz)
-            opened = datetime(now.year, now.month, now.day, 9, 15, tzinfo=tz)
-            return opened.timestamp()
-        except Exception:
-            now = datetime.now()
-            opened = now.replace(hour=9, minute=15, second=0, microsecond=0)
-            return opened.timestamp()
-
     def bootstrap_oi_history_from_fyers(api, rows, spot, max_strikes=25):
-        """Recover today's intraday OI baselines so login time is NOT the clock start.
+        """Build 15/30/60-minute OI baselines immediately after login/restart.
 
-        The dashboard remains live immediately after login. When the user logs in
-        after 09:15, we rebuild reference snapshots from today's market-open
-        session and create 15/30/60-minute reference points from FYERS history.
-        If FYERS history is unavailable for some contracts, the function keeps the
-        live chain and uses a safe session-open fallback instead of showing WAIT.
+        FYERS History API supports historical OI for active derivative contracts when
+        oi_flag=1 is requested. We use the current option chain to identify the active
+        option symbols, fetch 1-minute candles for the last ~65 minutes, and construct
+        three historical snapshots. This avoids making the user's 15/30/60m analysis
+        start at login time. If some symbols fail, the function keeps the successfully
+        recovered legs and the live snapshot remains available.
         """
         if not rows or spot is None:
             return 0
@@ -876,6 +860,8 @@ def main_trading_dashboard():
             if not items:
                 return 0
 
+            # Keep the bootstrap practical: ATM +/- 25 strikes (up to 51 strikes,
+            # CE + PE). The live dashboard can still display the wider current chain.
             strikes = sorted({float(r.get("strike", 0)) for r in items})
             atm = min(strikes, key=lambda x: abs(x - float(spot)))
             chosen = sorted(strikes, key=lambda x: abs(x - atm))[:max_strikes * 2 + 1]
@@ -883,19 +869,11 @@ def main_trading_dashboard():
             items = [r for r in items if float(r.get("strike", 0)) in chosen_set]
 
             now = time.time()
-            open_ts = _today_market_open_epoch()
-            # Never request a future/closed-day range. Before 09:15 this function is
-            # not used by the live-market path. During the session, use today's open.
-            if now <= open_ts + 60:
-                return 0
             targets = {m: now - m * 60 for m in (15, 30, 60)}
-            # We need enough history to reach today's open, not merely the last 70m.
-            lookback_minutes = max(70, int((now - open_ts) / 60) + 2)
             per_key = {}
 
             def fetch_one(r):
-                resp = history(api, r.get("symbol"), minutes=lookback_minutes, include_oi=True,
-                               from_ts=int(open_ts), to_ts=int(now - 30))
+                resp = history(api, r.get("symbol"), minutes=70, include_oi=True)
                 candles = resp.get("candles", []) if isinstance(resp, dict) and str(resp.get("s", "")).lower() == "ok" else []
                 parsed = []
                 for c in candles:
@@ -905,25 +883,20 @@ def main_trading_dashboard():
                         ts = float(c[0]); oi = float(c[6])
                     except Exception:
                         continue
-                    if oi < 0:
-                        continue
                     parsed.append((ts, oi))
                 parsed.sort()
                 if not parsed:
                     return None
                 out = {}
-                # Exact 15/30/60 historical points; if an exact point is missing,
-                # use the latest candle at or before the target.
                 for mins, target in targets.items():
                     eligible = [x for x in parsed if x[0] <= target]
                     if eligible:
                         out[mins] = eligible[-1]
-                # Also retain today's first available OI as the session-open anchor.
-                out["open"] = parsed[0]
                 if not out:
                     return None
                 return (key_for(r["strike"], r["type"]), out)
 
+            # A bounded pool makes login bootstrap fast without flooding the API.
             with ThreadPoolExecutor(max_workers=8) as pool:
                 futures = [pool.submit(fetch_one, r) for r in items]
                 for fut in as_completed(futures):
@@ -934,52 +907,39 @@ def main_trading_dashboard():
                     except Exception:
                         continue
 
-            live_snap = take_snapshot(rows)
+            if not per_key:
+                return 0
+
             restored = deque(maxlen=720)
+            live_snap = take_snapshot(rows)
             for mins in (60, 30, 15):
                 snap = {}
                 for key, points in per_key.items():
                     point = points.get(mins)
                     if point is None:
-                        # Do not manufacture an OI number. If the requested interval
-                        # predates the first available candle, use the first available
-                        # session OI as a documented session-open fallback.
-                        point = points.get("open")
-                    if point is None:
                         continue
-                    live = live_snap.get(key, {})
                     snap[key] = {
                         "oi": int(point[1]),
-                        "oich": live.get("oich", 0),
-                        "oichp": live.get("oichp", 0),
-                        "ltp": live.get("ltp", 0),
-                        "volume": live.get("volume", 0),
+                        "oich": 0,
+                        "oichp": 0,
+                        "ltp": live_snap.get(key, {}).get("ltp", 0),
+                        "volume": live_snap.get(key, {}).get("volume", 0),
                     }
                 if snap:
                     restored.append((targets[mins], snap))
 
-            # If FYERS history did not provide enough OI rows, use the current live
-            # chain as the reference. This guarantees live data starts immediately
-            # and prevents the UI from being blocked by a history bootstrap.
-            if not restored:
-                base = {}
-                for key, live in live_snap.items():
-                    base[key] = dict(live)
-                for mins in (60, 30, 15):
-                    restored.append((targets[mins], base))
-                source = "SESSION_OPEN_FALLBACK"
-            else:
-                source = "FYERS_HISTORY_TODAY"
-
+            # Put the historical points in chronological order and append the live
+            # snapshot. The live point is the right edge used by every window.
             restored = deque(sorted(restored, key=lambda x: x[0]), maxlen=720)
-            restored.append((now, live_snap))
-            st.session_state.oi_history = restored
-            st.session_state.oi_history_bootstrap_source = source
-            st.session_state.oi_history_bootstrap_at = now
-            return len(restored)
+            if restored:
+                restored.append((now, live_snap))
+                st.session_state.oi_history = restored
+                st.session_state.oi_history_bootstrap_source = "FYERS_HISTORY"
+                st.session_state.oi_history_bootstrap_at = now
+                return len(restored)
         except Exception as exc:
             st.session_state.oi_history_bootstrap_error = str(exc)
-            return 0
+        return 0
 
     def parse_chain(resp):
         if not isinstance(resp, dict) or str(resp.get("s", "")).lower() != "ok":
@@ -1099,11 +1059,7 @@ def main_trading_dashboard():
                 w = TIME_WEIGHTS[mins]; weighted += w * score; total_weight += w
             else: score = 0
             details[mins] = {"ready": ready, "score": score, "ce_oi": ce_oi, "pe_oi": pe_oi, "ce_oich": ce_oich, "pe_oich": pe_oich}
-        if total_weight == 0:
-            # Never block the live dashboard waiting for elapsed login time.
-            # The intraday bootstrap normally supplies today's 15/30/60 baselines;
-            # if FYERS history is temporarily unavailable, keep a neutral live score.
-            return "SIDEWAYS", 0, details
+        if total_weight == 0: return "LOADING", 0, details
         score = weighted / total_weight
         if score >= 0.18: return "BULLISH", score, details
         elif score <= -0.18: return "BEARISH", score, details
@@ -1209,16 +1165,7 @@ def main_trading_dashboard():
                     else:
                         market_state = "MIXED / WAIT"
                     return {"state": market_state, "ready": True, "minutes": mins, "strike": atm["strike"], "ce": ce_sig, "pe": pe_sig}
-        # Live data is valid immediately; lack of a historical point must not block
-        # the dashboard. Use the current ATM contracts as a neutral baseline.
-        ce_sig = {"state": "MIXED / NO CONFIRMATION", "score": 0, "ready": True,
-                  "price_pct": 0.0, "volume_pct": 0.0, "oi_pct": 0.0, "oich": float(ce.get("oich", 0) if ce else 0),
-                  "volume_stable": True, "checks": {"price": False, "volume": False, "oi": False, "oich": False}}
-        pe_sig = {"state": "MIXED / NO CONFIRMATION", "score": 0, "ready": True,
-                  "price_pct": 0.0, "volume_pct": 0.0, "oi_pct": 0.0, "oich": float(pe.get("oich", 0) if pe else 0),
-                  "volume_stable": True, "checks": {"price": False, "volume": False, "oi": False, "oich": False}}
-        return {"state": "MIXED / LIVE FROM OPEN", "ready": True, "strike": atm["strike"],
-                "ce": ce_sig, "pe": pe_sig, "minutes": None}
+        return {"state": "WAITING FOR HISTORY", "ready": False, "strike": atm["strike"], "ce": None, "pe": None, "minutes": None}
 
     # -----------------------------------------------------------------
     # HOVER EXPLANATIONS — NUMBER -> MEANING -> WHAT TO CHECK
@@ -1273,9 +1220,9 @@ def main_trading_dashboard():
         trend_cls = "up" if trend == "BULLISH" else "down" if trend == "BEARISH" else "side"
         if not detail.get("ready"):
             return f"""<div class="popup-title">{minutes} MINUTE MARKET TREND</div>
-                <div class="popup-trend side">🟢 LIVE / SESSION-OPEN BASELINE</div>
+                <div class="popup-trend side">⏳ WAIT / DATA NOT READY</div>
                 <div class="popup-score">Score: {score:+.3f}</div>
-                <div class="popup-section"><b>Score Details</b><br>आज के market-open से live baseline बनाया गया है; login के समय से clock शुरू नहीं होती। Actual interval data उपलब्ध होने पर उसी से score update होता रहेगा।</div>
+                <div class="popup-section"><b>Score Details</b><br>इस timeframe के लिए पर्याप्त historical data अभी उपलब्ध नहीं है।</div>
                 <div class="popup-section"><b>Trend Indicator</b><br>{arrows}</div>"""
         return f"""<div class="popup-title">{minutes} MINUTE MARKET TREND</div>
             <div class="popup-trend {trend_cls}">{trend}</div>
@@ -2003,12 +1950,11 @@ def main_trading_dashboard():
         cache_text = st.session_state.cached_at or "पिछला उपलब्ध snapshot"
         st.info(f"🔵 MARKET CLOSED / LAST AVAILABLE DATA — अभी live market data नहीं है। नीचे दिख रहा data अंतिम उपलब्ध snapshot है: {cache_text}. Market खुलते ही dashboard live data पर अपने आप switch होगा।")
         
-    if market_open and st.session_state.oi_history_bootstrap_source in ("FYERS_HISTORY_TODAY", "FYERS_HISTORY", "SESSION_OPEN_FALLBACK", "CACHE"):
-        boot_age = max(0.0, time.time() - st.session_state.oi_history_bootstrap_at) if st.session_state.oi_history_bootstrap_at else 0.0
-        source_label = st.session_state.oi_history_bootstrap_source.replace("_", " ")
-        st.info(f"🕒 Intraday OI baseline active — {source_label} • 15m/30m/60m clock is anchored to today's 09:15 market open • {boot_age:.0f}s ago")
-    elif market_open:
-        st.caption("🟢 15/30/60m engine is LIVE from today's market-open data; login time is not used as the starting clock.")
+    if market_open and st.session_state.oi_history_bootstrap_source == "FYERS_HISTORY":
+        boot_age = max(0.0, time.time() - st.session_state.oi_history_bootstrap_at)
+        st.info(f"🕒 Historical OI bootstrap loaded at login — 15m/30m/60m baselines recovered from FYERS History API • {boot_age:.0f}s ago")
+    elif market_open and len(st.session_state.get("oi_history", deque())) < 2:
+        st.caption("⏳ 15/30/60m OI history is being initialized. Live data is already active; historical baseline will appear as soon as FYERS History data is available.")
 
     spot, rows, meta = st.session_state.live_chain
     df = make_df(rows)
@@ -2020,21 +1966,21 @@ def main_trading_dashboard():
 
     # 4-factor confirmation panel
     ff_state = four_factor.get("state", "LOADING")
-    ff_icon = {"BULLISH CONFIRMATION": "🟢", "BEARISH CONFIRMATION": "🔴", "MIXED / WAIT": "🟡", "MIXED / LIVE FROM OPEN": "🟢"}.get(ff_state, "🟢")
-    ff_color = {"BULLISH CONFIRMATION": "#166534", "BEARISH CONFIRMATION": "#991b1b", "MIXED / WAIT": "#92400e", "MIXED / LIVE FROM OPEN": "#166534"}.get(ff_state, "#475569")
+    ff_icon = {"BULLISH CONFIRMATION": "🟢", "BEARISH CONFIRMATION": "🔴", "MIXED / WAIT": "🟡"}.get(ff_state, "⏳")
+    ff_color = {"BULLISH CONFIRMATION": "#166534", "BEARISH CONFIRMATION": "#991b1b", "MIXED / WAIT": "#92400e"}.get(ff_state, "#475569")
     st.markdown(f"<div style='border:1px solid rgba(100,116,139,.25);border-left:6px solid {ff_color};border-radius:14px;padding:14px 18px;margin:8px 0 16px;background:rgba(148,163,184,.07);'><div style='font-size:18px;font-weight:800;'>{ff_icon} 4-FACTOR POSITION CONFIRMATION: {ff_state}</div><div style='font-size:12px;color:#64748b;margin-top:4px;'>Price + Volume + OI + OI Change • Same ATM strike • Historical snapshot confirmation</div></div>", unsafe_allow_html=True)
     if four_factor.get("ready"):
         ce_sig, pe_sig = four_factor.get("ce"), four_factor.get("pe")
         fc1, fc2, fc3 = st.columns(3)
         with fc1:
-            st.markdown(f"**ATM Strike:** {four_factor.get('strike', 0):.0f}  \n**History:** {str(four_factor.get('minutes') or 'SESSION OPEN')}")
+            st.markdown(f"**ATM Strike:** {four_factor.get('strike', 0):.0f}  \n**History:** {four_factor.get('minutes')}m")
         with fc2:
             _hover_card("ATM CE", f"{ce_sig['state']} ({ce_sig['score']}/4)", _four_factor_explanation("CE", ce_sig), "atm-ce", "metric-hover-card ff-hover")
         with fc3:
             _hover_card("ATM PE", f"{pe_sig['state']} ({pe_sig['score']}/4)", _four_factor_explanation("PE", pe_sig), "atm-pe", "metric-hover-card ff-hover")
         st.caption("नोट: यह rule-based confirmation है; इसे अकेले trade signal या guaranteed prediction न मानें।")
     else:
-        st.info("🟢 4-factor engine live है; historical baseline उपलब्ध होने तक current session-open baseline का उपयोग किया जा रहा है।")
+        st.info("⏳ 4-factor confirmation के लिए कम से कम 15 मिनट की historical snapshot data चाहिए।")
 
     # SUPPORT / RESISTANCE 50-POINT ALERT
     alert_html = ""
@@ -2132,7 +2078,7 @@ def main_trading_dashboard():
             if d_val["ready"]:
                 _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val, details), f"score-{mins}m")
             else:
-                _hover_card(f"⏱️ {mins}m Score", "LIVE", _score_explanation(mins, d_val.get("score", 0), d_val, details), f"score-{mins}m")
+                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val, details), f"score-{mins}m")
 
     x1, x2, x3, x4 = st.columns(4)
     x1.markdown(f"<div class='box entry'><b>ENTRY LEVEL</b><div class='big'>{fmt_price(entry)}</div><div class='muted'>{mode}</div></div>", unsafe_allow_html=True)
