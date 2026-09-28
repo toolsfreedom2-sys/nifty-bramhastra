@@ -1267,20 +1267,10 @@ def main_trading_dashboard():
             if oich > 0: state = "SESSION OI BUILDUP"
             elif oich < 0: state = "SESSION OI UNWINDING"
             else: state = "SESSION OI FLAT"
-            checks = {
-                "price": False,
-                "volume": False,
-                "oi": (oich != 0),
-                "oich": (oich != 0),
-            }
-            # IMPORTANT: Matched must always equal the number of green checks shown
-            # in the popup. Previously the LIVE SESSION fallback hard-coded score=1
-            # even when both OI and OI CHANGE were green, causing a visible 2-check /
-            # 1-of-4 mismatch.
-            matched = sum(1 for value in checks.values() if value)
-            return {"state": state, "score": matched, "ready": True,
+            return {"state": state, "score": 1 if oich != 0 else 0, "ready": True,
                     "price_pct": 0.0, "volume_pct": 0.0, "oi_pct": oichp, "oich": oich,
-                    "volume_stable": True, "checks": checks, "live_session": True, "side": side}
+                    "volume_stable": True, "checks": {"price": False, "volume": False,
+                    "oi": oich != 0, "oich": oich != 0}, "live_session": True, "side": side}
         ce_sig = live_session_sig(ce, "CE")
         pe_sig = live_session_sig(pe, "PE")
         if ce_sig["oich"] > 0 and pe_sig["oich"] < 0:
