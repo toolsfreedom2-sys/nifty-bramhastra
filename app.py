@@ -1086,25 +1086,47 @@ def main_trading_dashboard():
     
     def trend_data(rows):
         details = {}; weighted = 0.0; total_weight = 0.0
+        # FYERS option-chain OI/OI-change are session-live values. Use them as
+        # the immediate session-open fallback when a historical baseline cannot
+        # be recovered, so 15/30/60 never show WAIT/blank after login.
+        live_ce_oi = live_pe_oi = live_ce_oich = live_pe_oich = 0.0
+        for r in rows:
+            if r["type"] == "CE":
+                live_ce_oi += float(r.get("oi", 0) or 0)
+                live_ce_oich += float(r.get("oich", 0) or 0)
+            else:
+                live_pe_oi += float(r.get("oi", 0) or 0)
+                live_pe_oich += float(r.get("oich", 0) or 0)
+        oi_den = max(abs(live_ce_oi) + abs(live_pe_oi), 1.0)
+        ch_den = max(abs(live_ce_oich) + abs(live_pe_oich), 1.0)
+        session_score = (0.65 * ((live_pe_oi - live_ce_oi) / oi_den)
+                         + 0.35 * ((live_pe_oich - live_ce_oich) / ch_den))
+
         for mins in (15, 30, 60):
             shift, ready = shifts(rows, mins)
-            ce_oi = 0; pe_oi = 0; ce_oich = 0; pe_oich = 0
+            ce_oi = pe_oi = ce_oich = pe_oich = 0.0
             if ready:
                 for r in rows:
                     x = shift.get(key_for(r["strike"], r["type"]), {})
-                    if r["type"] == "CE": ce_oi += x.get("oi_shift", 0); ce_oich += x.get("oich_shift", 0)
-                    else: pe_oi += x.get("oi_shift", 0); pe_oich += x.get("oich_shift", 0)
-                oi_den = max(abs(ce_oi) + abs(pe_oi), 1); ch_den = max(abs(ce_oich) + abs(pe_oich), 1)
-                score = 0.65 * ((pe_oi - ce_oi)/oi_den) + 0.35 * ((pe_oich - ce_oich)/ch_den)
-                w = TIME_WEIGHTS[mins]; weighted += w * score; total_weight += w
-            else: score = 0
-            details[mins] = {"ready": ready, "score": score, "ce_oi": ce_oi, "pe_oi": pe_oi, "ce_oich": ce_oich, "pe_oich": pe_oich}
-        if total_weight == 0:
-            # Never block the live dashboard waiting for elapsed login time.
-            # The intraday bootstrap normally supplies today's 15/30/60 baselines;
-            # if FYERS history is temporarily unavailable, keep a neutral live score.
-            return "SIDEWAYS", 0, details
-        score = weighted / total_weight
+                    if r["type"] == "CE":
+                        ce_oi += x.get("oi_shift", 0); ce_oich += x.get("oich_shift", 0)
+                    else:
+                        pe_oi += x.get("oi_shift", 0); pe_oich += x.get("oich_shift", 0)
+                den_oi = max(abs(ce_oi) + abs(pe_oi), 1.0)
+                den_ch = max(abs(ce_oich) + abs(pe_oich), 1.0)
+                score = 0.65 * ((pe_oi - ce_oi) / den_oi) + 0.35 * ((pe_oich - ce_oich) / den_ch)
+                source = "HISTORICAL BASELINE"
+            else:
+                score = session_score
+                ce_oi, pe_oi = live_ce_oi, live_pe_oi
+                ce_oich, pe_oich = live_ce_oich, live_pe_oich
+                source = "SESSION OPEN / LIVE"
+            w = TIME_WEIGHTS[mins]
+            weighted += w * score; total_weight += w
+            details[mins] = {"ready": True, "score": score, "ce_oi": ce_oi,
+                             "pe_oi": pe_oi, "ce_oich": ce_oich, "pe_oich": pe_oich,
+                             "source": source}
+        score = weighted / max(total_weight, 1e-9)
         if score >= 0.18: return "BULLISH", score, details
         elif score <= -0.18: return "BEARISH", score, details
         return "SIDEWAYS", score, details
@@ -1217,8 +1239,29 @@ def main_trading_dashboard():
         pe_sig = {"state": "MIXED / NO CONFIRMATION", "score": 0, "ready": True,
                   "price_pct": 0.0, "volume_pct": 0.0, "oi_pct": 0.0, "oich": float(pe.get("oich", 0) if pe else 0),
                   "volume_stable": True, "checks": {"price": False, "volume": False, "oi": False, "oich": False}}
-        return {"state": "MIXED / LIVE FROM OPEN", "ready": True, "strike": atm["strike"],
-                "ce": ce_sig, "pe": pe_sig, "minutes": None}
+        # Historical option-candle baseline was not recovered. Keep the panel live
+        # and show the actual FYERS session OI state instead of WAITING. Exact 4-factor
+        # confirmation will replace this automatically when a valid baseline exists.
+        def live_session_sig(contract, side):
+            oich = float(contract.get("oich", 0) or 0) if contract else 0.0
+            oichp = float(contract.get("oichp", 0) or 0) if contract else 0.0
+            if oich > 0: state = "SESSION OI BUILDUP"
+            elif oich < 0: state = "SESSION OI UNWINDING"
+            else: state = "SESSION OI FLAT"
+            return {"state": state, "score": 1 if oich != 0 else 0, "ready": True,
+                    "price_pct": 0.0, "volume_pct": 0.0, "oi_pct": oichp, "oich": oich,
+                    "volume_stable": True, "checks": {"price": False, "volume": False,
+                    "oi": oich != 0, "oich": oich != 0}, "live_session": True, "side": side}
+        ce_sig = live_session_sig(ce, "CE")
+        pe_sig = live_session_sig(pe, "PE")
+        if ce_sig["oich"] > 0 and pe_sig["oich"] < 0:
+            market_state = "LIVE OI BULLISH BIAS"
+        elif ce_sig["oich"] < 0 and pe_sig["oich"] > 0:
+            market_state = "LIVE OI BEARISH BIAS"
+        else:
+            market_state = "LIVE OI MIXED"
+        return {"state": market_state, "ready": True, "strike": atm["strike"],
+                "ce": ce_sig, "pe": pe_sig, "minutes": "SESSION OPEN", "live_session": True}
 
     # -----------------------------------------------------------------
     # HOVER EXPLANATIONS — NUMBER -> MEANING -> WHAT TO CHECK
@@ -2129,10 +2172,9 @@ def main_trading_dashboard():
     for col, mins in zip((c15, c30, c60), (15, 30, 60)):
         d_val = details[mins]
         with col:
-            if d_val["ready"]:
-                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val, details), f"score-{mins}m")
-            else:
-                _hover_card(f"⏱️ {mins}m Score", "LIVE", _score_explanation(mins, d_val.get("score", 0), d_val, details), f"score-{mins}m")
+            source_tag = d_val.get("source", "LIVE")
+            detail_html = _score_explanation(mins, d_val.get("score", 0), d_val, details) + f"<div class='popup-section'><b>Baseline:</b> {source_tag}</div>"
+            _hover_card(f"⏱️ {mins}m Score", f"{d_val.get('score', 0):+.3f}", detail_html, f"score-{mins}m")
 
     x1, x2, x3, x4 = st.columns(4)
     x1.markdown(f"<div class='box entry'><b>ENTRY LEVEL</b><div class='big'>{fmt_price(entry)}</div><div class='muted'>{mode}</div></div>", unsafe_allow_html=True)
