@@ -687,7 +687,7 @@ def main_trading_dashboard():
         st.divider()
         
         if st.session_state.get("user_email") == ADMIN_EMAIL:
-            st.header("👑 Admin Panel (FYERS API)")
+            st.header("👑 Admin Panel (API Connection)")
             auth_code = st.query_params.get("auth_code") or st.query_params.get("code")
             if auth_code:
                 token, err = exchange_auth_code(FYERS_APP_ID, FYERS_SECRET_KEY, auth_code)
@@ -707,8 +707,8 @@ def main_trading_dashboard():
                 else:
                     st.error(f"FYERS Link Error: {auth_err}")
             else:
-                st.success("✅ FYERS Live Data Connected!")
-                if st.button("🔌 Disconnect FYERS", use_container_width=True):
+                st.success("✅ Live Data Connected!")
+                if st.button("🔌 Disconnect", use_container_width=True):
                     save_token(FYERS_APP_ID, "")
                     st.rerun()
 
