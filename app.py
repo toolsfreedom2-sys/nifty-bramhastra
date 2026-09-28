@@ -11,6 +11,7 @@ import requests
 import hashlib
 import base64
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import deque
@@ -318,6 +319,10 @@ if "cached_at" not in st.session_state: st.session_state.cached_at = None
 if "data_symbol" not in st.session_state: st.session_state.data_symbol = None
 if "closed_wide_refresh_attempted" not in st.session_state: st.session_state.closed_wide_refresh_attempted = False
 if "oi_history" not in st.session_state: st.session_state.oi_history = deque(maxlen=720)
+if "oi_history_bootstrap_done" not in st.session_state: st.session_state.oi_history_bootstrap_done = False
+if "oi_history_bootstrap_source" not in st.session_state: st.session_state.oi_history_bootstrap_source = "NONE"
+if "oi_history_bootstrap_at" not in st.session_state: st.session_state.oi_history_bootstrap_at = 0.0
+if "oi_history_bootstrap_error" not in st.session_state: st.session_state.oi_history_bootstrap_error = ""
 
 # =====================================================================
 # HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
@@ -816,11 +821,125 @@ def main_trading_dashboard():
             return None
         return None
 
-    def history(api, symbol):
+    def history(api, symbol, minutes=180, include_oi=False):
         now = int(time.time())
-        data = {"symbol": symbol, "resolution": "1", "date_format": "0", "range_from": str(now - 3*60*60), "range_to": str(now), "cont_flag": "1"}
-        try: return api.history(data=data)
-        except Exception as exc: return {"s": "error", "message": str(exc)}
+        data = {
+            "symbol": symbol, "resolution": "1", "date_format": "0",
+            "range_from": str(now - int(minutes) * 60),
+            "range_to": str(now - 60),
+            "cont_flag": "1"
+        }
+        if include_oi:
+            data["oi_flag"] = "1"
+        try:
+            return api.history(data=data)
+        except Exception as exc:
+            return {"s": "error", "message": str(exc)}
+
+    def bootstrap_oi_history_from_fyers(api, rows, spot, max_strikes=25):
+        """Build 15/30/60-minute OI baselines immediately after login/restart.
+
+        FYERS History API supports historical OI for active derivative contracts when
+        oi_flag=1 is requested. We use the current option chain to identify the active
+        option symbols, fetch 1-minute candles for the last ~65 minutes, and construct
+        three historical snapshots. This avoids making the user's 15/30/60m analysis
+        start at login time. If some symbols fail, the function keeps the successfully
+        recovered legs and the live snapshot remains available.
+        """
+        if not rows or spot is None:
+            return 0
+        try:
+            unique = {}
+            for r in rows:
+                sym = str(r.get("symbol") or "").strip()
+                strike = float(r.get("strike", 0) or 0)
+                if not sym or strike <= 0:
+                    continue
+                unique[(strike, r.get("type"), sym)] = r
+            items = list(unique.values())
+            if not items:
+                return 0
+
+            # Keep the bootstrap practical: ATM +/- 25 strikes (up to 51 strikes,
+            # CE + PE). The live dashboard can still display the wider current chain.
+            strikes = sorted({float(r.get("strike", 0)) for r in items})
+            atm = min(strikes, key=lambda x: abs(x - float(spot)))
+            chosen = sorted(strikes, key=lambda x: abs(x - atm))[:max_strikes * 2 + 1]
+            chosen_set = set(chosen)
+            items = [r for r in items if float(r.get("strike", 0)) in chosen_set]
+
+            now = time.time()
+            targets = {m: now - m * 60 for m in (15, 30, 60)}
+            per_key = {}
+
+            def fetch_one(r):
+                resp = history(api, r.get("symbol"), minutes=70, include_oi=True)
+                candles = resp.get("candles", []) if isinstance(resp, dict) and str(resp.get("s", "")).lower() == "ok" else []
+                parsed = []
+                for c in candles:
+                    if not isinstance(c, (list, tuple)) or len(c) < 7:
+                        continue
+                    try:
+                        ts = float(c[0]); oi = float(c[6])
+                    except Exception:
+                        continue
+                    parsed.append((ts, oi))
+                parsed.sort()
+                if not parsed:
+                    return None
+                out = {}
+                for mins, target in targets.items():
+                    eligible = [x for x in parsed if x[0] <= target]
+                    if eligible:
+                        out[mins] = eligible[-1]
+                if not out:
+                    return None
+                return (key_for(r["strike"], r["type"]), out)
+
+            # A bounded pool makes login bootstrap fast without flooding the API.
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = [pool.submit(fetch_one, r) for r in items]
+                for fut in as_completed(futures):
+                    try:
+                        result = fut.result()
+                        if result:
+                            per_key[result[0]] = result[1]
+                    except Exception:
+                        continue
+
+            if not per_key:
+                return 0
+
+            restored = deque(maxlen=720)
+            live_snap = take_snapshot(rows)
+            for mins in (60, 30, 15):
+                snap = {}
+                for key, points in per_key.items():
+                    point = points.get(mins)
+                    if point is None:
+                        continue
+                    snap[key] = {
+                        "oi": int(point[1]),
+                        "oich": 0,
+                        "oichp": 0,
+                        "ltp": live_snap.get(key, {}).get("ltp", 0),
+                        "volume": live_snap.get(key, {}).get("volume", 0),
+                    }
+                if snap:
+                    restored.append((targets[mins], snap))
+
+            # Put the historical points in chronological order and append the live
+            # snapshot. The live point is the right edge used by every window.
+            restored = deque(sorted(restored, key=lambda x: x[0]), maxlen=720)
+            if restored:
+                restored.append((now, live_snap))
+                st.session_state.oi_history = restored
+                st.session_state.oi_history_bootstrap_source = "FYERS_HISTORY"
+                st.session_state.oi_history_bootstrap_at = now
+                return len(restored)
+        except Exception as exc:
+            st.session_state.oi_history_bootstrap_error = str(exc)
+        return 0
 
     def parse_chain(resp):
         if not isinstance(resp, dict) or str(resp.get("s", "")).lower() != "ok":
@@ -1693,6 +1812,10 @@ def main_trading_dashboard():
         st.session_state.last_fetch = 0.0
         st.session_state.last_quote_fetch = 0.0
         st.session_state.last_history_fetch = 0.0
+        st.session_state.oi_history_bootstrap_done = False
+        st.session_state.oi_history_bootstrap_source = "NONE"
+        st.session_state.oi_history_bootstrap_at = 0.0
+        st.session_state.oi_history_bootstrap_error = ""
 
     if st.session_state.live_chain is None:
         cached = load_market_cache(symbol)
@@ -1703,9 +1826,15 @@ def main_trading_dashboard():
             st.session_state.data_source = "CACHED"
             st.session_state.cached_at = cached.get("saved_at_text")
             restore_snapshot_history(cached.get("oi_history", []))
-            # If an older cache has no history, seed it with the current cached snapshot.
+            # A persistent cache may already contain enough historical snapshots.
+            # Do not re-bootstrap in that case. If it only has a single point, allow
+            # the live-market bootstrap below to recover the missing 15/30/60 history.
             if not st.session_state.oi_history and cached.get("rows"):
                 st.session_state.oi_history.append((float(cached.get("saved_at", time.time())), take_snapshot(cached.get("rows", []))))
+            if len(st.session_state.oi_history) >= 2:
+                span = st.session_state.oi_history[-1][0] - st.session_state.oi_history[0][0]
+                st.session_state.oi_history_bootstrap_done = span >= 15 * 60
+                st.session_state.oi_history_bootstrap_source = "CACHE" if st.session_state.oi_history_bootstrap_done else "NONE"
 
     # During market hours, keep polling FYERS for fresh data. Outside market
     # hours we first use the persistent cache, but if no cache exists (for
@@ -1753,6 +1882,14 @@ def main_trading_dashboard():
                 st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                 st.session_state.data_symbol = symbol
                 add_snapshot(fresh_rows)
+                # If the user logged in after the market had already been running,
+                # recover historical option OI immediately instead of starting the
+                # 15/30/60-minute clock at login time. This runs once per index/session.
+                if market_open and not st.session_state.oi_history_bootstrap_done:
+                    recovered = bootstrap_oi_history_from_fyers(api, fresh_rows, spot_chain, max_strikes=25)
+                    st.session_state.oi_history_bootstrap_done = True
+                    if recovered:
+                        st.session_state.last_fetch_error = ""
                 if not market_open:
                     save_market_cache(symbol, spot_chain, fresh_rows, fresh_meta, hist_resp)
         except Exception as exc:
@@ -1813,6 +1950,12 @@ def main_trading_dashboard():
         cache_text = st.session_state.cached_at or "पिछला उपलब्ध snapshot"
         st.info(f"🔵 MARKET CLOSED / LAST AVAILABLE DATA — अभी live market data नहीं है। नीचे दिख रहा data अंतिम उपलब्ध snapshot है: {cache_text}. Market खुलते ही dashboard live data पर अपने आप switch होगा।")
         
+    if market_open and st.session_state.oi_history_bootstrap_source == "FYERS_HISTORY":
+        boot_age = max(0.0, time.time() - st.session_state.oi_history_bootstrap_at)
+        st.info(f"🕒 Historical OI bootstrap loaded at login — 15m/30m/60m baselines recovered from FYERS History API • {boot_age:.0f}s ago")
+    elif market_open and len(st.session_state.get("oi_history", deque())) < 2:
+        st.caption("⏳ 15/30/60m OI history is being initialized. Live data is already active; historical baseline will appear as soon as FYERS History data is available.")
+
     spot, rows, meta = st.session_state.live_chain
     df = make_df(rows)
     trend, score, details = trend_data(rows)
