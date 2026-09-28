@@ -184,6 +184,8 @@ if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "user_email" not in st.session_state: st.session_state.user_email = ""
 if "has_subscription" not in st.session_state: st.session_state.has_subscription = False
 if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
+if "last_quote_fetch" not in st.session_state: st.session_state.last_quote_fetch = 0.0
+if "last_history_fetch" not in st.session_state: st.session_state.last_history_fetch = 0.0
 if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 if "data_source" not in st.session_state: st.session_state.data_source = "NONE"
@@ -479,6 +481,7 @@ def pricing_page():
 # =====================================================================
 # PAGE 3: MAIN TRADING DASHBOARD
 # =====================================================================
+@st.fragment(run_every=1)
 def main_trading_dashboard():
     def sf(v, default=0.0):
         try: return float(v)
@@ -664,6 +667,25 @@ def main_trading_dashboard():
                 return resp
             last = resp
         return last or {"s": "error", "message": "Option chain unavailable"}
+
+    def quote_spot(api, symbol):
+        """Fetch the current index LTP from FYERS Quotes API."""
+        try:
+            resp = api.quotes(data={"symbols": symbol})
+            if not isinstance(resp, dict) or str(resp.get("s", "")).lower() != "ok":
+                return None
+            items = resp.get("d") or resp.get("data") or []
+            if isinstance(items, dict):
+                items = [items]
+            for item in items:
+                value = item.get("v") if isinstance(item, dict) else None
+                if isinstance(value, dict) and value.get("lp") is not None:
+                    return sf(value.get("lp"))
+                if isinstance(item, dict) and item.get("lp") is not None:
+                    return sf(item.get("lp"))
+        except Exception:
+            return None
+        return None
 
     def history(api, symbol):
         now = int(time.time())
@@ -1539,6 +1561,9 @@ def main_trading_dashboard():
         st.session_state.cached_at = None
         st.session_state.data_symbol = symbol
         st.session_state.closed_wide_refresh_attempted = False
+        st.session_state.last_fetch = 0.0
+        st.session_state.last_quote_fetch = 0.0
+        st.session_state.last_history_fetch = 0.0
 
     if st.session_state.live_chain is None:
         cached = load_market_cache(symbol)
@@ -1579,19 +1604,29 @@ def main_trading_dashboard():
         if fallback_closed_fetch:
             st.session_state.closed_wide_refresh_attempted = True
         try:
+            # Poll the live option chain approximately once per second.
             resp = option_chain(api, symbol, 50)
-            spot, rows, meta, err = parse_chain(resp)
+            spot_chain, rows, meta, err = parse_chain(resp)
             if not err and rows:
-                hist_resp = history(api, symbol)
+                # Poll the index quote from FYERS Quotes API as the live spot source.
+                live_spot = quote_spot(api, symbol) if market_open else None
+                spot = live_spot if live_spot is not None else spot_chain
+
+                # Historical candles are throttled; they are not a 1-second feed.
+                hist_resp = st.session_state.live_history
+                if (not hist_resp) or (now - st.session_state.last_history_fetch >= 55.0):
+                    hist_resp = history(api, symbol)
+                    st.session_state.live_history = hist_resp
+                    st.session_state.last_history_fetch = now
+
                 st.session_state.live_chain = (spot, rows, meta)
-                st.session_state.live_history = hist_resp
                 st.session_state.last_fetch = now
+                if live_spot is not None:
+                    st.session_state.last_quote_fetch = now
                 st.session_state.data_source = "LIVE" if market_open else "LAST_FYERS"
                 st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                 st.session_state.data_symbol = symbol
                 snapshot_added = add_snapshot(rows)
-                # Save the cache when the OI history advances, and also on the first
-                # successful fetch so closed-market fallback always has a snapshot.
                 if snapshot_added or st.session_state.data_source != "LIVE":
                     save_market_cache(symbol, spot, rows, meta, hist_resp)
         except Exception:
@@ -1610,7 +1645,8 @@ def main_trading_dashboard():
     # Clear source/status banner so the user can immediately distinguish live
     # data from the last available market snapshot.
     if st.session_state.data_source == "LIVE" and market_open:
-        st.success("🟢 LIVE MARKET DATA — FYERS से वर्तमान data आ रहा है।")
+        age = max(0.0, time.time() - float(st.session_state.last_fetch or time.time()))
+        st.success(f"🟢 LIVE MARKET DATA — FYERS से live data आ रहा है • Last update: {age:.1f}s ago • Auto refresh: 1s")
     elif st.session_state.data_source == "LAST_FYERS":
         st.info(f"🔵 LAST AVAILABLE FYERS DATA — Market बंद है, इसलिए FYERS से मिला अंतिम उपलब्ध snapshot दिखाया जा रहा है: {st.session_state.cached_at}.")
     else:
