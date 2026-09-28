@@ -703,7 +703,7 @@ def main_trading_dashboard():
                 st.warning("मार्केट डेटा बंद है। लॉगिन करें:")
                 auth_url, auth_err = make_auth_url(FYERS_APP_ID, FYERS_SECRET_KEY)
                 if auth_url:
-                    st.link_button("🔓 Open FYERS Login", auth_url, use_container_width=True)
+                    st.link_button("🔓 Data Login", auth_url, use_container_width=True)
                 else:
                     st.error(f"FYERS Link Error: {auth_err}")
             else:
