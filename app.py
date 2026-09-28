@@ -6,13 +6,22 @@ Python 3.12 + Streamlit + FYERS API v3 + Firebase Auth/Firestore + Google OAuth
 
 import json
 import time
+import threading
 import requests
 import hashlib
 import base64
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import deque
+
+try:
+    from fyers_apiv3.FyersWebsocket import data_ws
+    FYERS_WS_IMPORT_ERROR = None
+except Exception as exc:
+    data_ws = None
+    FYERS_WS_IMPORT_ERROR = str(exc)
 
 import numpy as np
 import pandas as pd
@@ -178,12 +187,131 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
+# TRUE LIVE FYERS WEBSOCKET CACHE
+# ---------------------------------------------------------------------
+_WS_LOCK = threading.RLock()
+_WS_MANAGERS = {}
+
+class _FyersLiveFeed:
+    def __init__(self, client_id, token):
+        self.client_id = client_id
+        self.token = token
+        self.access_token = f"{client_id}:{token}"
+        self.lock = threading.RLock()
+        self.ticks = {}
+        self.symbols = set()
+        self.ws = None
+        self.connected = False
+        self.started = False
+        self.last_message = 0.0
+        self.last_error = ""
+
+    def _on_message(self, message):
+        if not isinstance(message, dict):
+            return
+        symbol = message.get("symbol") or message.get("Symbol")
+        if not symbol:
+            return
+        with self.lock:
+            self.ticks[str(symbol)] = dict(message)
+            self.last_message = time.time()
+
+    def _on_error(self, message):
+        self.last_error = str(message)
+        self.connected = False
+
+    def _on_close(self, message):
+        self.connected = False
+
+    def _on_connect(self):
+        self.connected = True
+        with self.lock:
+            syms = list(self.symbols)
+        if syms:
+            try:
+                self.ws.subscribe(symbols=syms, data_type="SymbolUpdate")
+            except Exception as exc:
+                self.last_error = str(exc)
+        try:
+            self.ws.keep_running()
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.connected = False
+
+    def _run(self):
+        if data_ws is None:
+            self.last_error = f"FYERS WebSocket unavailable: {FYERS_WS_IMPORT_ERROR}"
+            return
+        try:
+            self.ws = data_ws.FyersDataSocket(
+                access_token=self.access_token,
+                log_path="",
+                litemode=False,
+                write_to_file=False,
+                reconnect=True,
+                reconnect_retry=10,
+                on_connect=self._on_connect,
+                on_close=self._on_close,
+                on_error=self._on_error,
+                on_message=self._on_message,
+            )
+            self.started = True
+            self.ws.connect()
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.connected = False
+
+    def start(self):
+        if self.started:
+            return
+        t = threading.Thread(target=self._run, name="fyers-live-feed", daemon=True)
+        t.start()
+
+    def set_symbols(self, symbols):
+        new_set = {str(x) for x in symbols if x}
+        with self.lock:
+            old = set(self.symbols)
+            self.symbols = new_set
+        self.start()
+        if self.connected and self.ws:
+            add = list(new_set - old)
+            remove = list(old - new_set)
+            try:
+                if remove:
+                    self.ws.unsubscribe(symbols=remove, data_type="SymbolUpdate")
+                if add:
+                    self.ws.subscribe(symbols=add, data_type="SymbolUpdate")
+            except Exception as exc:
+                self.last_error = str(exc)
+
+    def get(self, symbol):
+        with self.lock:
+            return dict(self.ticks.get(str(symbol), {}))
+
+    def status(self):
+        with self.lock:
+            return self.connected, self.last_message, self.last_error
+
+
+def get_live_feed(client_id, token):
+    key = f"{client_id}:{token}"
+    with _WS_LOCK:
+        feed = _WS_MANAGERS.get(key)
+        if feed is None:
+            feed = _FyersLiveFeed(client_id, token)
+            _WS_MANAGERS[key] = feed
+        return feed
+
+# ---------------------------------------------------------------------
 # SESSION STATE SETUP
 # ---------------------------------------------------------------------
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "user_email" not in st.session_state: st.session_state.user_email = ""
 if "has_subscription" not in st.session_state: st.session_state.has_subscription = False
 if "last_fetch" not in st.session_state: st.session_state.last_fetch = 0.0
+if "last_quote_fetch" not in st.session_state: st.session_state.last_quote_fetch = 0.0
+if "last_history_fetch" not in st.session_state: st.session_state.last_history_fetch = 0.0
+if "last_fetch_error" not in st.session_state: st.session_state.last_fetch_error = ""
 if "live_chain" not in st.session_state: st.session_state.live_chain = None
 if "live_history" not in st.session_state: st.session_state.live_history = None
 if "data_source" not in st.session_state: st.session_state.data_source = "NONE"
@@ -191,6 +319,10 @@ if "cached_at" not in st.session_state: st.session_state.cached_at = None
 if "data_symbol" not in st.session_state: st.session_state.data_symbol = None
 if "closed_wide_refresh_attempted" not in st.session_state: st.session_state.closed_wide_refresh_attempted = False
 if "oi_history" not in st.session_state: st.session_state.oi_history = deque(maxlen=720)
+if "oi_history_bootstrap_done" not in st.session_state: st.session_state.oi_history_bootstrap_done = False
+if "oi_history_bootstrap_source" not in st.session_state: st.session_state.oi_history_bootstrap_source = "NONE"
+if "oi_history_bootstrap_at" not in st.session_state: st.session_state.oi_history_bootstrap_at = 0.0
+if "oi_history_bootstrap_error" not in st.session_state: st.session_state.oi_history_bootstrap_error = ""
 
 # =====================================================================
 # HELPER: GOOGLE AUTH HANDLER (With Unique Key Parameter)
@@ -479,6 +611,7 @@ def pricing_page():
 # =====================================================================
 # PAGE 3: MAIN TRADING DASHBOARD
 # =====================================================================
+@st.fragment(run_every=1)
 def main_trading_dashboard():
     def sf(v, default=0.0):
         try: return float(v)
@@ -599,7 +732,11 @@ def main_trading_dashboard():
         Exchange holidays are not embedded here; if FYERS returns live data it
         still takes precedence during the session.
         """
-        dt = dt or datetime.now()
+        try:
+            from zoneinfo import ZoneInfo
+            dt = dt.astimezone(ZoneInfo("Asia/Kolkata")) if dt and getattr(dt, "tzinfo", None) else datetime.now(ZoneInfo("Asia/Kolkata"))
+        except Exception:
+            dt = dt or datetime.now()
         if dt.weekday() >= 5:
             return False
         t = dt.time()
@@ -665,11 +802,144 @@ def main_trading_dashboard():
             last = resp
         return last or {"s": "error", "message": "Option chain unavailable"}
 
-    def history(api, symbol):
+    def quote_spot(api, symbol):
+        """Fetch the current index LTP from FYERS Quotes API."""
+        try:
+            resp = api.quotes(data={"symbols": symbol})
+            if not isinstance(resp, dict) or str(resp.get("s", "")).lower() != "ok":
+                return None
+            items = resp.get("d") or resp.get("data") or []
+            if isinstance(items, dict):
+                items = [items]
+            for item in items:
+                value = item.get("v") if isinstance(item, dict) else None
+                if isinstance(value, dict) and value.get("lp") is not None:
+                    return sf(value.get("lp"))
+                if isinstance(item, dict) and item.get("lp") is not None:
+                    return sf(item.get("lp"))
+        except Exception:
+            return None
+        return None
+
+    def history(api, symbol, minutes=180, include_oi=False):
         now = int(time.time())
-        data = {"symbol": symbol, "resolution": "1", "date_format": "0", "range_from": str(now - 3*60*60), "range_to": str(now), "cont_flag": "1"}
-        try: return api.history(data=data)
-        except Exception as exc: return {"s": "error", "message": str(exc)}
+        data = {
+            "symbol": symbol, "resolution": "1", "date_format": "0",
+            "range_from": str(now - int(minutes) * 60),
+            "range_to": str(now - 60),
+            "cont_flag": "1"
+        }
+        if include_oi:
+            data["oi_flag"] = "1"
+        try:
+            return api.history(data=data)
+        except Exception as exc:
+            return {"s": "error", "message": str(exc)}
+
+    def bootstrap_oi_history_from_fyers(api, rows, spot, max_strikes=25):
+        """Build 15/30/60-minute OI baselines immediately after login/restart.
+
+        FYERS History API supports historical OI for active derivative contracts when
+        oi_flag=1 is requested. We use the current option chain to identify the active
+        option symbols, fetch 1-minute candles for the last ~65 minutes, and construct
+        three historical snapshots. This avoids making the user's 15/30/60m analysis
+        start at login time. If some symbols fail, the function keeps the successfully
+        recovered legs and the live snapshot remains available.
+        """
+        if not rows or spot is None:
+            return 0
+        try:
+            unique = {}
+            for r in rows:
+                sym = str(r.get("symbol") or "").strip()
+                strike = float(r.get("strike", 0) or 0)
+                if not sym or strike <= 0:
+                    continue
+                unique[(strike, r.get("type"), sym)] = r
+            items = list(unique.values())
+            if not items:
+                return 0
+
+            # Keep the bootstrap practical: ATM +/- 25 strikes (up to 51 strikes,
+            # CE + PE). The live dashboard can still display the wider current chain.
+            strikes = sorted({float(r.get("strike", 0)) for r in items})
+            atm = min(strikes, key=lambda x: abs(x - float(spot)))
+            chosen = sorted(strikes, key=lambda x: abs(x - atm))[:max_strikes * 2 + 1]
+            chosen_set = set(chosen)
+            items = [r for r in items if float(r.get("strike", 0)) in chosen_set]
+
+            now = time.time()
+            targets = {m: now - m * 60 for m in (15, 30, 60)}
+            per_key = {}
+
+            def fetch_one(r):
+                resp = history(api, r.get("symbol"), minutes=70, include_oi=True)
+                candles = resp.get("candles", []) if isinstance(resp, dict) and str(resp.get("s", "")).lower() == "ok" else []
+                parsed = []
+                for c in candles:
+                    if not isinstance(c, (list, tuple)) or len(c) < 7:
+                        continue
+                    try:
+                        ts = float(c[0]); oi = float(c[6])
+                    except Exception:
+                        continue
+                    parsed.append((ts, oi))
+                parsed.sort()
+                if not parsed:
+                    return None
+                out = {}
+                for mins, target in targets.items():
+                    eligible = [x for x in parsed if x[0] <= target]
+                    if eligible:
+                        out[mins] = eligible[-1]
+                if not out:
+                    return None
+                return (key_for(r["strike"], r["type"]), out)
+
+            # A bounded pool makes login bootstrap fast without flooding the API.
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = [pool.submit(fetch_one, r) for r in items]
+                for fut in as_completed(futures):
+                    try:
+                        result = fut.result()
+                        if result:
+                            per_key[result[0]] = result[1]
+                    except Exception:
+                        continue
+
+            if not per_key:
+                return 0
+
+            restored = deque(maxlen=720)
+            live_snap = take_snapshot(rows)
+            for mins in (60, 30, 15):
+                snap = {}
+                for key, points in per_key.items():
+                    point = points.get(mins)
+                    if point is None:
+                        continue
+                    snap[key] = {
+                        "oi": int(point[1]),
+                        "oich": 0,
+                        "oichp": 0,
+                        "ltp": live_snap.get(key, {}).get("ltp", 0),
+                        "volume": live_snap.get(key, {}).get("volume", 0),
+                    }
+                if snap:
+                    restored.append((targets[mins], snap))
+
+            # Put the historical points in chronological order and append the live
+            # snapshot. The live point is the right edge used by every window.
+            restored = deque(sorted(restored, key=lambda x: x[0]), maxlen=720)
+            if restored:
+                restored.append((now, live_snap))
+                st.session_state.oi_history = restored
+                st.session_state.oi_history_bootstrap_source = "FYERS_HISTORY"
+                st.session_state.oi_history_bootstrap_at = now
+                return len(restored)
+        except Exception as exc:
+            st.session_state.oi_history_bootstrap_error = str(exc)
+        return 0
 
     def parse_chain(resp):
         if not isinstance(resp, dict) or str(resp.get("s", "")).lower() != "ok":
@@ -684,7 +954,7 @@ def main_trading_dashboard():
                 continue
             g = x.get("greeks") or {}
             rows.append({
-                "strike": sf(x.get("strike_price")), "type": typ, "ltp": sf(x.get("ltp")), "oi": si(x.get("oi")),
+                "strike": sf(x.get("strike_price")), "type": typ, "symbol": x.get("symbol") or x.get("option_symbol") or "", "ltp": sf(x.get("ltp")), "oi": si(x.get("oi")),
                 "oich": si(x.get("oich")), "oichp": sf(x.get("oichp")), "volume": si(x.get("volume", x.get("vol", x.get("v", 0)))), "iv": sf(x.get("iv", g.get("iv"))),
                 "delta": sf(g.get("delta")), "theta": sf(g.get("theta"))
             })
@@ -859,6 +1129,7 @@ def main_trading_dashboard():
             "oi_pct": oi_pct,
             "oich": oich,
             "volume_stable": volume_stable,
+            "checks": checks,
         }
 
     def _snapshot_for_minutes(minutes):
@@ -876,7 +1147,7 @@ def main_trading_dashboard():
         atm = min(rows, key=lambda r: abs(float(r.get("strike", 0)) - float(spot)))
         ce = next((r for r in rows if r["type"] == "CE" and r["strike"] == atm["strike"]), None)
         pe = next((r for r in rows if r["type"] == "PE" and r["strike"] == atm["strike"]), None)
-        # Symmetric CALL/PUT interpretation: each side can be bullish or bearish.
+        # Prefer the longest ready history for a stable confirmation, otherwise use 15m.
         for mins in (60, 30, 15):
             prev = _snapshot_for_minutes(mins)
             if prev and ce and pe:
@@ -887,21 +1158,14 @@ def main_trading_dashboard():
                     pe_sig = four_factor_state(pe, pe_prev)
                     bullish_states = {"LONG BUILDUP", "SHORT COVERING"}
                     bearish_states = {"SHORT BUILDUP", "LONG UNWINDING"}
-                    ce_bias = "BULLISH" if ce_sig["state"] in bullish_states else ("BEARISH" if ce_sig["state"] in bearish_states else "MIXED")
-                    pe_bias = "BULLISH" if pe_sig["state"] in bullish_states else ("BEARISH" if pe_sig["state"] in bearish_states else "MIXED")
-                    if ce_bias == "BULLISH" and pe_bias == "BEARISH": market_state = "BULLISH CONFIRMATION"
-                    elif ce_bias == "BEARISH" and pe_bias == "BULLISH": market_state = "BEARISH CONFIRMATION"
-                    elif ce_bias == "BULLISH" and pe_bias == "BULLISH": market_state = "CALL + PUT BULLISH / CONFLICT"
-                    elif ce_bias == "BEARISH" and pe_bias == "BEARISH": market_state = "CALL + PUT BEARISH / CONFLICT"
-                    else: market_state = "MIXED / WAIT"
-                    ce_sig["bias"] = ce_bias; pe_sig["bias"] = pe_bias
+                    if ce_sig["state"] in bullish_states and pe_sig["state"] in bearish_states:
+                        market_state = "BULLISH CONFIRMATION"
+                    elif ce_sig["state"] in bearish_states and pe_sig["state"] in bullish_states:
+                        market_state = "BEARISH CONFIRMATION"
+                    else:
+                        market_state = "MIXED / WAIT"
                     return {"state": market_state, "ready": True, "minutes": mins, "strike": atm["strike"], "ce": ce_sig, "pe": pe_sig}
-        # Never assume bullishness when history is unavailable.
-        if ce and pe:
-            ce_sig = {"state": "MIXED / NO CONFIRMATION", "score": 0, "ready": True, "bias": "MIXED", "price_pct": 0.0, "volume_pct": 0.0, "oi_pct": 0.0, "oich": float(ce.get("oich", 0) or 0)}
-            pe_sig = {"state": "MIXED / NO CONFIRMATION", "score": 0, "ready": True, "bias": "MIXED", "price_pct": 0.0, "volume_pct": 0.0, "oi_pct": 0.0, "oich": float(pe.get("oich", 0) or 0)}
-            return {"state": "MIXED / WAIT", "ready": True, "minutes": None, "strike": atm["strike"], "ce": ce_sig, "pe": pe_sig}
-        return {"state": "LOADING", "ready": False, "strike": atm["strike"], "ce": None, "pe": None, "minutes": None}
+        return {"state": "WAITING FOR HISTORY", "ready": False, "strike": atm["strike"], "ce": None, "pe": None, "minutes": None}
 
     # -----------------------------------------------------------------
     # HOVER EXPLANATIONS — NUMBER -> MEANING -> WHAT TO CHECK
@@ -919,86 +1183,204 @@ def main_trading_dashboard():
             unsafe_allow_html=True
         )
 
+    def _trend_from_score(score):
+        try: score = float(score)
+        except Exception: score = 0.0
+        if score >= 0.18: return "BULLISH"
+        if score <= -0.18: return "BEARISH"
+        return "SIDEWAYS"
+
+    def _score_strength(score):
+        try: score = float(score)
+        except Exception: score = 0.0
+        if score >= 0.30: return "STRONG BULLISH"
+        if score >= 0.18: return "BULLISH"
+        if score <= -0.30: return "STRONG BEARISH"
+        if score <= -0.18: return "BEARISH"
+        return "SIDEWAYS / MIXED"
+
+    def _direction_arrows(details):
+        parts = []
+        for mins in (15, 30, 60):
+            d = details.get(mins, {}) if isinstance(details, dict) else {}
+            if not d.get("ready"):
+                arrow, cls = "→", "side"
+            else:
+                tr = _trend_from_score(d.get("score", 0))
+                if tr == "BULLISH": arrow, cls = "↑", "up"
+                elif tr == "BEARISH": arrow, cls = "↓", "down"
+                else: arrow, cls = "→", "side"
+            parts.append(f"<span class='tf-arrow {cls}'>{mins}m {arrow}</span>")
+        return " <span class='tf-sep'>•</span> ".join(parts)
+
+    def _score_explanation(minutes, score, detail, all_details=None):
+        trend = _trend_from_score(score)
+        strength = _score_strength(score)
+        arrows = _direction_arrows(all_details or {minutes: detail})
+        trend_cls = "up" if trend == "BULLISH" else "down" if trend == "BEARISH" else "side"
+        if not detail.get("ready"):
+            return f"""<div class="popup-title">{minutes} MINUTE MARKET TREND</div>
+                <div class="popup-trend side">⏳ WAIT / DATA NOT READY</div>
+                <div class="popup-score">Score: {score:+.3f}</div>
+                <div class="popup-section"><b>Score Details</b><br>इस timeframe के लिए पर्याप्त historical data अभी उपलब्ध नहीं है।</div>
+                <div class="popup-section"><b>Trend Indicator</b><br>{arrows}</div>"""
+        return f"""<div class="popup-title">{minutes} MINUTE MARKET TREND</div>
+            <div class="popup-trend {trend_cls}">{trend}</div>
+            <div class="popup-score">Score: {score:+.3f}</div>
+            <div class="popup-strength">Strength: <b>{strength}</b></div>
+            <div class="popup-section"><b>SCORE DETAILS</b><br>
+            CE OI Shift: {detail.get('ce_oi', 0):+,.0f}<br>
+            PE OI Shift: {detail.get('pe_oi', 0):+,.0f}<br>
+            CE OI Change Shift: {detail.get('ce_oich', 0):+,.0f}<br>
+            PE OI Change Shift: {detail.get('pe_oich', 0):+,.0f}</div>
+            <div class="popup-section"><b>TREND INDICATOR</b><br>{arrows}</div>"""
+
     def _pcr_explanation(pcr):
-        if pcr is None:
-            return "PCR data उपलब्ध नहीं है।"
-        if pcr < 0.70:
-            bias = "CALL OI की तुलना में PUT OI काफी कम है — option-chain में bearish/resistance bias दिख रहा है।"; zone = "बहुत कम PCR"
-        elif pcr < 1.00:
-            bias = "CALL OI, PUT OI से अधिक है — हल्का bearish/resistance bias माना जा सकता है, लेकिन यह अकेला trend confirmation नहीं है।"; zone = "CALL-heavy zone"
-        elif pcr <= 1.30:
-            bias = "PUT OI, CALL OI के बराबर या अधिक है — support-side bias दिख सकता है; price और OI-change से confirmation जरूरी है।"; zone = "Balanced / mild PUT-heavy"
-        else:
-            bias = "PUT OI काफी अधिक है — support-side bias मजबूत दिख सकता है, लेकिन बहुत ऊंचा PCR crowded positioning/contrarian risk भी दिखा सकता है।"; zone = "High PUT-heavy zone"
-        return f'''<b>PCR = {pcr:.2f}</b><br><b>Zone:</b> {zone}<br>{bias}<br><br>
-            <b>कैसे पढ़ें:</b> PCR = Total PUT OI ÷ Total CALL OI।<br>
-            <b>क्या देखें:</b> PCR के साथ NIFTY price, OI Change और 15/30/60m confirmation को मिलाकर देखें।<br>
-            <b>सावधानी:</b> PCR अकेले BUY/SELL signal नहीं है।'''
+        if pcr is None: return "PCR data उपलब्ध नहीं है।"
+        if pcr < 0.90: trend = "BEARISH"
+        elif pcr <= 1.10: trend = "NEUTRAL"
+        elif pcr <= 1.40: trend = "BULLISH"
+        else: trend = "STRONG BULLISH"
+        trend_cls = "up" if "BULLISH" in trend else "down" if trend == "BEARISH" else "side"
+        return f"""<div class="popup-title">PCR TREND</div>
+            <div class="popup-trend {trend_cls}">{trend}</div>
+            <div class="popup-score">Current PCR: {pcr:.2f}</div>
+            <div class="popup-section"><b>PCR RANGE DETAILS</b><br>
+            &lt; 0.90 → BEARISH<br>
+            0.90 – 1.10 → NEUTRAL<br>
+            1.10 – 1.40 → BULLISH<br>
+            &gt; 1.40 → STRONG BULLISH</div>
+            <div class="popup-section"><b>Formula:</b> Total PUT OI ÷ Total CALL OI</div>"""
 
     def _max_pain_explanation(pain, spot):
         if pain is None or spot is None: return "Max Pain data उपलब्ध नहीं है।"
-        dist = float(spot) - float(pain); pct = (abs(dist) / float(spot) * 100.0) if spot else 0.0
-        if abs(dist) < 25: relation = "Spot Max Pain के बहुत पास है; expiry-related pinning/reference zone के रूप में देखा जा सकता है।"
-        elif dist > 0: relation = f"Spot Max Pain से लगभग {abs(dist):.0f} points ऊपर है; Max Pain नीचे reference zone है।"
-        else: relation = f"Spot Max Pain से लगभग {abs(dist):.0f} points नीचे है; Max Pain ऊपर reference zone है।"
-        return f'''<b>Max Pain = {pain:.0f}</b><br>{relation}<br><b>Distance:</b> {abs(dist):.0f} points ({pct:.2f}%)<br><br>
-            <b>इसका मतलब:</b> मौजूदा option OI के आधार पर वह expiry strike जहां aggregate intrinsic-payout calculation न्यूनतम होती है।<br>
-            <b>क्या देखें:</b> Spot और Max Pain का gap, expiry के पास price behavior और major Call/Put OI walls।<br>
-            <b>सावधानी:</b> Max Pain को guaranteed target या future price prediction न मानें।'''
+        dist = float(spot) - float(pain)
+        relation = "Spot Max Pain के ऊपर है" if dist > 0 else ("Spot Max Pain के नीचे है" if dist < 0 else "Spot और Max Pain समान हैं")
+        return f"""<div class="popup-title">MAX PAIN</div>
+            <div class="popup-score">Max Pain Price: {pain:.0f}</div>
+            <div class="popup-section">Spot Price: {spot:.2f}<br><b>Distance: {abs(dist):.0f} Points</b><br>{relation}</div>"""
 
     def _vix_explanation(vix, change_pct):
         if vix is None: return "India VIX data उपलब्ध नहीं है।"
-        if vix < 15: level = "कम implied volatility zone"
-        elif vix < 20: level = "मध्यम volatility zone"
-        elif vix < 25: level = "उच्च volatility zone"
-        else: level = "बहुत ऊंचा volatility zone"
-        if change_pct > 3: move = "VIX तेजी से बढ़ रहा है — हालिया expected volatility बढ़ रही है।"
-        elif change_pct < -3: move = "VIX घट रहा है — हालिया expected volatility कम हो रही है।"
-        else: move = "VIX में बड़ा बदलाव नहीं है — volatility expectation अपेक्षाकृत स्थिर है।"
-        return f'''<b>India VIX = {vix:.2f}</b><br><b>Level:</b> {level}<br>{move}<br><br>
-            <b>इसका मतलब:</b> India VIX NIFTY options के prices से अगले 30 calendar days की expected volatility को दर्शाता है।<br>
-            <b>क्या देखें:</b> VIX ↑ के साथ option premiums/price swings बढ़ सकते हैं; VIX ↓ में volatility pressure घट सकता है।<br>
-            <b>सावधानी:</b> VIX direction यह नहीं बताती कि NIFTY निश्चित रूप से ऊपर जाएगा या नीचे।'''
-
-    def _score_explanation(minutes, score, detail):
-        if not detail.get("ready"):
-            return f'''<b>{minutes} मिनट:</b> historical data पर्याप्त नहीं है।<br><b>मतलब:</b> इस timeframe का score अभी reliable confirmation नहीं देता।<br><b>क्या देखें:</b> कम से कम {minutes}m history उपलब्ध होने के बाद score को price + OI change के साथ पढ़ें।'''
-        if score >= 0.18: bias = "Bullish-side bias"
-        elif score <= -0.18: bias = "Bearish-side bias"
-        else: bias = "Sideways / mixed bias"
-        return f'''<b>{minutes}m Score = {score:+.3f}</b><br><b>Interpretation:</b> {bias}<br>
-            <b>Score कैसे बनता है:</b> Put-vs-Call OI shift और OI-change shift को combine किया गया है।<br>
-            <b>Data:</b> CE OI shift {detail.get("ce_oi", 0):+.0f} • PE OI shift {detail.get("pe_oi", 0):+.0f}<br><b>OI Change shift:</b> CE {detail.get("ce_oich", 0):+.0f} • PE {detail.get("pe_oich", 0):+.0f}<br><br>
-            <b>क्या देखें:</b> 15m = short-term, 30m = intermediate, 60m = broader intraday context। तीनों एक दिशा में हों तो confirmation मजबूत समझा जा सकता है; अलग हों तो WAIT/MIXED context रखें।<br>
-            <b>सावधानी:</b> score rule-based indicator है, guaranteed prediction नहीं।'''
+        if vix < 15: level = "LOW VOLATILITY"
+        elif vix < 20: level = "MODERATE VOLATILITY"
+        elif vix < 25: level = "HIGH VOLATILITY"
+        else: level = "VERY HIGH VOLATILITY"
+        return f"""<div class="popup-title">INDIA VIX</div>
+            <div class="popup-score">VIX: {vix:.2f}</div>
+            <div class="popup-trend side">{level}</div>
+            <div class="popup-section"><b>VIX RANGE DETAILS</b><br>
+            &lt; 15 → LOW VOLATILITY<br>
+            15 – 20 → MODERATE VOLATILITY<br>
+            20 – 25 → HIGH VOLATILITY<br>
+            ≥ 25 → VERY HIGH VOLATILITY</div>
+            <div class="popup-section">VIX Change: {change_pct:+.2f}%</div>"""
 
     def _four_factor_explanation(side, sig):
         if not sig: return f"{side} data उपलब्ध नहीं है।"
-        state = sig.get("state", "LOADING"); score = int(sig.get("score", 0)); price = float(sig.get("price_pct", 0)); vol = float(sig.get("volume_pct", 0)); oi = float(sig.get("oi_pct", 0)); oich = float(sig.get("oich", 0))
-        meanings = {
-            "LONG BUILDUP": "Price ↑ + Volume ↑ + OI ↑ + session OI change positive: fresh long-side participation का pattern।",
-            "SHORT BUILDUP": "Price ↓ + Volume ↑ + OI ↑ + session OI change positive: fresh short-side participation का pattern।",
-            "SHORT COVERING": "Price ↑ + OI ↓ + OI change negative: shorts exit होने का pattern।",
-            "LONG UNWINDING": "Price ↓ + OI ↓ + OI change negative: longs exit होने का pattern।",
-            "MIXED / NO CONFIRMATION": "चारों factors एक ही दिशा में नहीं हैं; इसलिए साफ buildup/covering confirmation नहीं मिला।"
-        }
-        return f'''<b>{side}: {state} ({score}/4)</b><br>{meanings.get(state, "Data अभी loading है।")}<br><br>
-            <b>Price:</b> {price:+.2f}% &nbsp; <b>Volume:</b> {vol:+.1f}%<br>
-            <b>OI:</b> {oi:+.2f}% &nbsp; <b>OI Change:</b> {oich:+.0f}<br><br>
-            <b>{score}/4 का मतलब:</b> चार checks में {score} condition match हुई। 1/4 का अर्थ केवल एक condition match हुई — यह confirmation नहीं है।<br>
-            <b>क्या देखें:</b> अगले snapshot में price, volume, OI और OI-change का alignment तथा 15/30/60m context।<br>
-            <b>क्या करें:</b> केवल 1/4 या MIXED पर तुरंत trade signal न मानें; independent confirmation का इंतजार करें।'''
+        score = int(sig.get("score", 0))
+        checks = sig.get("checks", {})
+        def mark(name): return "🟢 ✓" if checks.get(name, False) else "🔴 ✕"
+        return f"""<div class="popup-title">ATM {side} — 4 CONDITION CHECK</div>
+            <div class="popup-section"><b>PRICE</b> {mark('price')}<br>
+            <b>VOLUME</b> {mark('volume')}<br>
+            <b>OI</b> {mark('oi')}<br>
+            <b>OI CHANGE</b> {mark('oich')}</div>
+            <div class="popup-score">Matched: {score}/4</div>
+            <div class="popup-section"><b>State:</b> {sig.get('state','LOADING')}<br>
+            Price: {float(sig.get('price_pct',0)):+.2f}%<br>
+            Volume: {float(sig.get('volume_pct',0)):+.1f}%<br>
+            OI: {float(sig.get('oi_pct',0)):+.2f}%<br>
+            OI Change: {float(sig.get('oich',0)):+,.0f}</div>"""
 
     st.markdown(r'''<style>
-    .metric-hover-wrap{position:relative;width:100%;min-height:78px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(255,255,255,.78);padding:10px 13px;box-sizing:border-box;cursor:help;margin-bottom:8px;z-index:20;}
+    /* ===== HOVER POPUP OVERLAY FIX =====
+       Streamlit columns/vertical blocks can create clipping/stacking contexts.
+       Keep the popup above every following row/tab and open it upward so the
+       lower cards cannot cover its lower edge. */
+    [data-testid="stHorizontalBlock"],
+    [data-testid="column"],
+    [data-testid="stColumn"],
+    [data-testid="stVerticalBlock"],
+    [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stElementContainer"]{
+        overflow:visible !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(.metric-hover-wrap:hover),
+    [data-testid="column"]:has(.metric-hover-wrap:hover),
+    [data-testid="stColumn"]:has(.metric-hover-wrap:hover),
+    [data-testid="stVerticalBlock"]:has(.metric-hover-wrap:hover),
+    [data-testid="stVerticalBlockBorderWrapper"]:has(.metric-hover-wrap:hover),
+    [data-testid="stElementContainer"]:has(.metric-hover-wrap:hover){
+        position:relative !important;
+        z-index:1000000 !important;
+        overflow:visible !important;
+    }
+    .metric-hover-wrap{
+        position:relative;
+        width:100%;
+        min-height:78px;
+        border:1px solid rgba(100,116,139,.18);
+        border-radius:14px;
+        background:rgba(255,255,255,.78);
+        padding:10px 13px;
+        box-sizing:border-box;
+        cursor:help;
+        margin-bottom:8px;
+        z-index:1;
+        isolation:isolate;
+    }
+    .metric-hover-wrap:hover{
+        z-index:1000001 !important;
+        border-color:rgba(59,130,246,.45);
+        box-shadow:0 7px 20px rgba(15,23,42,.10);
+    }
     .metric-hover-main{position:relative;z-index:2;}
     .metric-hover-label{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.02em;}
     .metric-hover-value{font-size:22px;font-weight:850;color:#0f172a;margin-top:2px;}
-    .metric-hover-popup{position:absolute;left:0;top:calc(100% + 7px);width:min(430px,calc(100vw - 42px));padding:14px 16px;border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 18px 45px rgba(15,23,42,.30);font-size:12px;line-height:1.55;opacity:0;visibility:hidden;transform:translateY(-5px);transition:opacity .14s ease,transform .14s ease,visibility .14s ease;pointer-events:none;}
-    .metric-hover-wrap:hover{border-color:rgba(59,130,246,.45);box-shadow:0 7px 20px rgba(15,23,42,.10);}
-    .metric-hover-wrap:hover .metric-hover-popup{opacity:1;visibility:visible;transform:translateY(0);}
+    .metric-hover-popup{
+        position:absolute;
+        left:0;
+        bottom:calc(100% + 10px);
+        top:auto;
+        width:min(430px,calc(100vw - 42px));
+        max-height:min(62vh,560px);
+        overflow:auto;
+        padding:14px 16px;
+        border-radius:14px;
+        background:#0f172a;
+        color:#f8fafc;
+        box-shadow:0 20px 55px rgba(15,23,42,.42),0 0 0 1px rgba(255,255,255,.10);
+        font-size:12px;
+        line-height:1.55;
+        opacity:0;
+        visibility:hidden;
+        transform:translateY(5px);
+        transition:opacity .14s ease,transform .14s ease,visibility .14s ease;
+        pointer-events:none;
+        z-index:1000002 !important;
+    }
+    .metric-hover-wrap:hover .metric-hover-popup{
+        opacity:1;
+        visibility:visible;
+        transform:translateY(0);
+    }
     .metric-hover-popup b{color:#fff;}
+    .popup-title{font-size:13px;font-weight:900;letter-spacing:.03em;margin-bottom:5px;}
+    .popup-score{font-size:18px;font-weight:900;margin:3px 0;}
+    .popup-strength{font-size:12px;margin-bottom:7px;}
+    .popup-section{border-top:1px solid rgba(255,255,255,.12);padding-top:8px;margin-top:8px;}
+    .popup-trend{font-size:17px;font-weight:900;margin:2px 0;}
+    .popup-trend.up,.tf-arrow.up{color:#4ade80;}
+    .popup-trend.down,.tf-arrow.down{color:#f87171;}
+    .popup-trend.side,.tf-arrow.side{color:#facc15;}
+    .tf-arrow{font-weight:900;font-size:13px;white-space:nowrap;}
+    .tf-sep{color:#94a3b8;}
     .ff-hover{min-height:96px;}
+    /* On short screens keep the popup usable and away from the browser edge. */
+    @media (max-height:700px){
+        .metric-hover-popup{max-height:52vh;}
+    }
     </style>''',unsafe_allow_html=True)
 
     def max_pain(df):
@@ -1427,6 +1809,13 @@ def main_trading_dashboard():
         st.session_state.cached_at = None
         st.session_state.data_symbol = symbol
         st.session_state.closed_wide_refresh_attempted = False
+        st.session_state.last_fetch = 0.0
+        st.session_state.last_quote_fetch = 0.0
+        st.session_state.last_history_fetch = 0.0
+        st.session_state.oi_history_bootstrap_done = False
+        st.session_state.oi_history_bootstrap_source = "NONE"
+        st.session_state.oi_history_bootstrap_at = 0.0
+        st.session_state.oi_history_bootstrap_error = ""
 
     if st.session_state.live_chain is None:
         cached = load_market_cache(symbol)
@@ -1437,53 +1826,103 @@ def main_trading_dashboard():
             st.session_state.data_source = "CACHED"
             st.session_state.cached_at = cached.get("saved_at_text")
             restore_snapshot_history(cached.get("oi_history", []))
-            # If an older cache has no history, seed it with the current cached snapshot.
+            # A persistent cache may already contain enough historical snapshots.
+            # Do not re-bootstrap in that case. If it only has a single point, allow
+            # the live-market bootstrap below to recover the missing 15/30/60 history.
             if not st.session_state.oi_history and cached.get("rows"):
                 st.session_state.oi_history.append((float(cached.get("saved_at", time.time())), take_snapshot(cached.get("rows", []))))
+            if len(st.session_state.oi_history) >= 2:
+                span = st.session_state.oi_history[-1][0] - st.session_state.oi_history[0][0]
+                st.session_state.oi_history_bootstrap_done = span >= 15 * 60
+                st.session_state.oi_history_bootstrap_source = "CACHE" if st.session_state.oi_history_bootstrap_done else "NONE"
 
     # During market hours, keep polling FYERS for fresh data. Outside market
     # hours we first use the persistent cache, but if no cache exists (for
     # example after a fresh deployment/restart), make one fallback FYERS call.
     # FYERS may still return the last available option-chain snapshot even
     # though the exchange itself is closed. That snapshot is then cached.
-    should_fetch = market_open and (now - st.session_state.last_fetch >= 0.9)
-    # If the persisted cache was created with the old 10-strike version, make
-    # one wider FYERS request even while the market is closed. If FYERS does
-    # not provide a wider historical chain, the old cache is retained safely.
-    cached_unique_strikes = 0
-    if st.session_state.live_chain:
-        try:
-            cached_unique_strikes = len(set(float(r.get("strike", 0)) for r in st.session_state.live_chain[1] if r.get("strike") is not None))
-        except Exception:
-            cached_unique_strikes = 0
-    fallback_closed_fetch = (
-        not market_open
-        and not st.session_state.closed_wide_refresh_attempted
-        and (st.session_state.live_chain is None or cached_unique_strikes < 35)
-        and (now - st.session_state.last_fetch >= 2.0)
-    )
+    # -----------------------------------------------------------------
+    # HYBRID LIVE FEED:
+    #   * WebSocket -> live LTP/volume for index + option symbols.
+    #   * Option-chain REST -> OI/ΔOI/IV/Greeks, refreshed periodically.
+    #   * Quotes API -> live index spot fallback/verification.
+    # FYERS currently does not provide OI on SymbolUpdate WebSocket; OI is
+    # supplied by the Option Chain API and can update less frequently.
+    # -----------------------------------------------------------------
+    chain_refresh_due = market_open and (now - st.session_state.last_fetch >= 15.0)
+    if st.session_state.live_chain is None:
+        chain_refresh_due = True
 
-    if should_fetch or fallback_closed_fetch:
-        if fallback_closed_fetch:
-            st.session_state.closed_wide_refresh_attempted = True
+    live_feed = get_live_feed(FYERS_APP_ID, access_token)
+
+    # First REST chain fetch establishes the option symbols to subscribe to.
+    if chain_refresh_due:
         try:
             resp = option_chain(api, symbol, 50)
-            spot, rows, meta, err = parse_chain(resp)
-            if not err and rows:
-                hist_resp = history(api, symbol)
-                st.session_state.live_chain = (spot, rows, meta)
-                st.session_state.live_history = hist_resp
+            spot_chain, fresh_rows, fresh_meta, err = parse_chain(resp)
+            if not err and fresh_rows:
+                hist_resp = st.session_state.live_history
+                if (not hist_resp) or (now - st.session_state.last_history_fetch >= 55.0):
+                    hist_resp = history(api, symbol)
+                    st.session_state.live_history = hist_resp
+                    st.session_state.last_history_fetch = now
+
+                # Preserve live websocket LTP/volume where already available.
+                for r in fresh_rows:
+                    tick = live_feed.get(r.get("symbol")) if r.get("symbol") else {}
+                    if tick:
+                        if tick.get("ltp") is not None:
+                            r["ltp"] = sf(tick.get("ltp"))
+                        if tick.get("vol_traded_today") is not None:
+                            r["volume"] = si(tick.get("vol_traded_today"))
+
+                st.session_state.live_chain = (spot_chain, fresh_rows, fresh_meta)
                 st.session_state.last_fetch = now
                 st.session_state.data_source = "LIVE" if market_open else "LAST_FYERS"
                 st.session_state.cached_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                 st.session_state.data_symbol = symbol
-                snapshot_added = add_snapshot(rows)
-                # Save the cache when the OI history advances, and also on the first
-                # successful fetch so closed-market fallback always has a snapshot.
-                if snapshot_added or st.session_state.data_source != "LIVE":
-                    save_market_cache(symbol, spot, rows, meta, hist_resp)
-        except Exception:
-            st.session_state.last_fetch = now
+                add_snapshot(fresh_rows)
+                # If the user logged in after the market had already been running,
+                # recover historical option OI immediately instead of starting the
+                # 15/30/60-minute clock at login time. This runs once per index/session.
+                if market_open and not st.session_state.oi_history_bootstrap_done:
+                    recovered = bootstrap_oi_history_from_fyers(api, fresh_rows, spot_chain, max_strikes=25)
+                    st.session_state.oi_history_bootstrap_done = True
+                    if recovered:
+                        st.session_state.last_fetch_error = ""
+                if not market_open:
+                    save_market_cache(symbol, spot_chain, fresh_rows, fresh_meta, hist_resp)
+        except Exception as exc:
+            st.session_state.last_fetch_error = str(exc)
+
+    # Subscribe to the currently displayed option chain plus the index.
+    if st.session_state.live_chain:
+        current_rows = st.session_state.live_chain[1]
+        ws_symbols = [symbol]
+        ws_symbols.extend(r.get("symbol") for r in current_rows if r.get("symbol"))
+        live_feed.set_symbols(ws_symbols)
+
+        # Every fragment run, merge the newest websocket ticks into the rows.
+        current_spot = live_feed.get(symbol).get("ltp")
+        if current_spot is None and market_open and (now - st.session_state.last_quote_fetch >= 0.8):
+            current_spot = quote_spot(api, symbol)
+            if current_spot is not None:
+                st.session_state.last_quote_fetch = now
+
+        updated_rows = []
+        for r in current_rows:
+            nr = dict(r)
+            tick = live_feed.get(nr.get("symbol")) if nr.get("symbol") else {}
+            if tick.get("ltp") is not None:
+                nr["ltp"] = sf(tick.get("ltp"))
+            if tick.get("vol_traded_today") is not None:
+                nr["volume"] = si(tick.get("vol_traded_today"))
+            updated_rows.append(nr)
+
+        old_spot = st.session_state.live_chain[0]
+        spot_now = sf(current_spot) if current_spot is not None else sf(old_spot)
+        st.session_state.live_chain = (spot_now, updated_rows, st.session_state.live_chain[2])
+        st.session_state.data_source = "LIVE" if market_open and (current_spot is not None or live_feed.status()[1] > 0) else st.session_state.data_source
 
     if not market_open and st.session_state.live_chain is None:
         # No persistent cache and FYERS did not return a last snapshot.
@@ -1498,13 +1937,25 @@ def main_trading_dashboard():
     # Clear source/status banner so the user can immediately distinguish live
     # data from the last available market snapshot.
     if st.session_state.data_source == "LIVE" and market_open:
-        st.success("🟢 LIVE MARKET DATA — FYERS से वर्तमान data आ रहा है।")
+        age = max(0.0, time.time() - float(st.session_state.last_fetch or time.time()))
+        ws_ok, ws_last, ws_err = live_feed.status() if 'live_feed' in locals() else (False, 0.0, '')
+        tick_age = max(0.0, time.time() - ws_last) if ws_last else 999.0
+        ws_text = f"WebSocket: {'LIVE' if ws_ok and tick_age < 5 else 'WAITING'}"
+        st.success(f"🟢 LIVE MARKET DATA — FYERS • {ws_text} • Tick: {tick_age:.1f}s • Chain refresh: {age:.1f}s • Auto refresh: 1s")
+        if getattr(st.session_state, 'last_fetch_error', ''):
+            st.warning(f"⚠️ Option-chain refresh: {st.session_state.last_fetch_error}")
     elif st.session_state.data_source == "LAST_FYERS":
         st.info(f"🔵 LAST AVAILABLE FYERS DATA — Market बंद है, इसलिए FYERS से मिला अंतिम उपलब्ध snapshot दिखाया जा रहा है: {st.session_state.cached_at}.")
     else:
         cache_text = st.session_state.cached_at or "पिछला उपलब्ध snapshot"
         st.info(f"🔵 MARKET CLOSED / LAST AVAILABLE DATA — अभी live market data नहीं है। नीचे दिख रहा data अंतिम उपलब्ध snapshot है: {cache_text}. Market खुलते ही dashboard live data पर अपने आप switch होगा।")
         
+    if market_open and st.session_state.oi_history_bootstrap_source == "FYERS_HISTORY":
+        boot_age = max(0.0, time.time() - st.session_state.oi_history_bootstrap_at)
+        st.info(f"🕒 Historical OI bootstrap loaded at login — 15m/30m/60m baselines recovered from FYERS History API • {boot_age:.0f}s ago")
+    elif market_open and len(st.session_state.get("oi_history", deque())) < 2:
+        st.caption("⏳ 15/30/60m OI history is being initialized. Live data is already active; historical baseline will appear as soon as FYERS History data is available.")
+
     spot, rows, meta = st.session_state.live_chain
     df = make_df(rows)
     trend, score, details = trend_data(rows)
@@ -1604,11 +2055,11 @@ def main_trading_dashboard():
     # METRICS ROW — hover explains exactly what each number means
     a, b, c, d, e, f = st.columns(6)
     with a:
-        _hover_card("NIFTY Spot", fmt_price(spot), "<b>Current NIFTY spot:</b> option-chain और trend calculations का underlying reference price।<br><b>क्या देखें:</b> Spot के साथ PCR, Max Pain, VIX और OI shifts को compare करें।", "nifty-spot")
+        _hover_card("NIFTY Spot", fmt_price(spot), f"<div class='popup-title'>{index_name}</div><div class='popup-score'>Spot Price: {fmt_price(spot)}</div>", "nifty-spot")
     with b:
-        _hover_card("CALL OI", fmt_num(meta["call_oi"]), "<b>Total CALL Open Interest:</b> खुले हुए Call option contracts का कुल OI।<br><b>मतलब:</b> बड़े Call OI zones resistance/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "call-oi")
+        _hover_card("CALL OI", fmt_num(meta["call_oi"]), f"<div class='popup-title'>CALL OI</div><div class='popup-score'>Total OI: {fmt_num(meta['call_oi'])}</div><div class='popup-section'>Resistance Price: <b>{fmt_price(resistance)}</b></div>", "call-oi")
     with c:
-        _hover_card("PUT OI", fmt_num(meta["put_oi"]), "<b>Total PUT Open Interest:</b> खुले हुए Put option contracts का कुल OI।<br><b>मतलब:</b> बड़े Put OI zones support/positioning reference हो सकते हैं।<br><b>क्या देखें:</b> OI Change और price के साथ।", "put-oi")
+        _hover_card("PUT OI", fmt_num(meta["put_oi"]), f"<div class='popup-title'>PUT OI</div><div class='popup-score'>Total OI: {fmt_num(meta['put_oi'])}</div><div class='popup-section'>Support Price: <b>{fmt_price(support)}</b></div>", "put-oi")
     with d:
         pcr_value = (meta['put_oi']/meta['call_oi']) if meta['call_oi'] else 0
         _hover_card("PCR", f"{pcr_value:.2f}", _pcr_explanation(pcr_value), "pcr")
@@ -1625,9 +2076,9 @@ def main_trading_dashboard():
         d_val = details[mins]
         with col:
             if d_val["ready"]:
-                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val), f"score-{mins}m")
+                _hover_card(f"⏱️ {mins}m Score", f"{d_val['score']:+.3f}", _score_explanation(mins, d_val['score'], d_val, details), f"score-{mins}m")
             else:
-                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val), f"score-{mins}m")
+                _hover_card(f"⏱️ {mins}m Score", "WAIT", _score_explanation(mins, 0, d_val, details), f"score-{mins}m")
 
     x1, x2, x3, x4 = st.columns(4)
     x1.markdown(f"<div class='box entry'><b>ENTRY LEVEL</b><div class='big'>{fmt_price(entry)}</div><div class='muted'>{mode}</div></div>", unsafe_allow_html=True)
