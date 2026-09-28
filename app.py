@@ -2044,7 +2044,7 @@ def main_trading_dashboard():
         # Keep the dashboard honest rather than fabricating values.
         st.info("ℹ️ मार्केट बंद है। इस Index का पिछला snapshot अभी उपलब्ध नहीं मिला। जैसे ही FYERS का पुराना/नया data मिलेगा, उसे यहाँ दिखाकर cache कर दिया जाएगा।")
 
-    st.title("📊 NIFTY OI BRAHMĀSTRA — LIVE / LAST DATA")
+    st.title("📊 Trade Easy — LIVE / LAST DATA")
     if not st.session_state.live_chain:
         st.info("डेटा उपलब्ध होने की प्रतीक्षा करें...")
         return
