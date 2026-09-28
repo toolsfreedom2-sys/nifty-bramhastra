@@ -899,29 +899,45 @@ def main_trading_dashboard():
                 candles = resp.get("candles", []) if isinstance(resp, dict) and str(resp.get("s", "")).lower() == "ok" else []
                 parsed = []
                 for c in candles:
+                    # FYERS 1-minute candle: [timestamp, open, high, low, close, volume, OI]
                     if not isinstance(c, (list, tuple)) or len(c) < 7:
                         continue
                     try:
-                        ts = float(c[0]); oi = float(c[6])
+                        ts = float(c[0])
+                        close = float(c[4])
+                        vol = max(0.0, float(c[5] or 0))
+                        oi = float(c[6])
                     except Exception:
                         continue
-                    if oi < 0:
+                    if oi < 0 or close <= 0:
                         continue
-                    parsed.append((ts, oi))
-                parsed.sort()
+                    parsed.append((ts, close, vol, oi))
+                parsed.sort(key=lambda x: x[0])
                 if not parsed:
                     return None
+
+                # Build cumulative session volume. The option-chain/WebSocket volume
+                # is today's traded volume, so the historical reference must use the
+                # cumulative volume from today's 09:15 open as well.
+                cumulative = 0.0
+                enriched = []
+                for ts, close, vol, oi in parsed:
+                    cumulative += vol
+                    enriched.append((ts, close, cumulative, oi))
+
                 out = {}
-                # Exact 15/30/60 historical points; if an exact point is missing,
-                # use the latest candle at or before the target.
+                # Create real historical reference points for 15/30/60 minutes.
+                # If a target is before the first returned candle, use the first
+                # available candle only for that interval; no fake values are made.
                 for mins, target in targets.items():
-                    eligible = [x for x in parsed if x[0] <= target]
+                    eligible = [x for x in enriched if x[0] <= target]
                     if eligible:
                         out[mins] = eligible[-1]
-                # Also retain today's first available OI as the session-open anchor.
-                out["open"] = parsed[0]
-                if not out:
-                    return None
+                    elif enriched:
+                        out[mins] = enriched[0]
+                # Today's first available candle is the true session-open anchor
+                # when FYERS returned data from 09:15.
+                out["open"] = enriched[0]
                 return (key_for(r["strike"], r["type"]), out)
 
             with ThreadPoolExecutor(max_workers=8) as pool:
@@ -948,12 +964,13 @@ def main_trading_dashboard():
                     if point is None:
                         continue
                     live = live_snap.get(key, {})
+                    # point = (timestamp, historical close, cumulative session volume, OI)
                     snap[key] = {
-                        "oi": int(point[1]),
-                        "oich": live.get("oich", 0),
-                        "oichp": live.get("oichp", 0),
-                        "ltp": live.get("ltp", 0),
-                        "volume": live.get("volume", 0),
+                        "oi": int(point[3]),
+                        "oich": 0,
+                        "oichp": 0,
+                        "ltp": float(point[1]),
+                        "volume": float(point[2]),
                     }
                 if snap:
                     restored.append((targets[mins], snap))
@@ -962,9 +979,11 @@ def main_trading_dashboard():
             # chain as the reference. This guarantees live data starts immediately
             # and prevents the UI from being blocked by a history bootstrap.
             if not restored:
-                base = {}
-                for key, live in live_snap.items():
-                    base[key] = dict(live)
+                # History was unavailable. Keep the dashboard live, but do not
+                # pretend that a historical price/volume/OI baseline exists. The
+                # live engine will explicitly show SESSION OPEN FALLBACK until a
+                # real FYERS history point becomes available.
+                base = {key: dict(live) for key, live in live_snap.items()}
                 for mins in (60, 30, 15):
                     restored.append((targets[mins], base))
                 source = "SESSION_OPEN_FALLBACK"
@@ -2065,7 +2084,7 @@ def main_trading_dashboard():
     ff_state = four_factor.get("state", "LOADING")
     ff_icon = {"BULLISH CONFIRMATION": "🟢", "BEARISH CONFIRMATION": "🔴", "MIXED / WAIT": "🟡", "MIXED / LIVE FROM OPEN": "🟢"}.get(ff_state, "🟢")
     ff_color = {"BULLISH CONFIRMATION": "#166534", "BEARISH CONFIRMATION": "#991b1b", "MIXED / WAIT": "#92400e", "MIXED / LIVE FROM OPEN": "#166534"}.get(ff_state, "#475569")
-    st.markdown(f"<div style='border:1px solid rgba(100,116,139,.25);border-left:6px solid {ff_color};border-radius:14px;padding:14px 18px;margin:8px 0 16px;background:rgba(148,163,184,.07);'><div style='font-size:18px;font-weight:800;'>{ff_icon} 4-FACTOR POSITION CONFIRMATION: {ff_state}</div><div style='font-size:12px;color:#64748b;margin-top:4px;'>Price + Volume + OI + OI Change • Same ATM strike • Historical snapshot confirmation</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='border:1px solid rgba(100,116,139,.25);border-left:6px solid {ff_color};border-radius:14px;padding:14px 18px;margin:8px 0 16px;background:rgba(148,163,184,.07);'><div style='font-size:18px;font-weight:800;'>{ff_icon} 4-FACTOR POSITION CONFIRMATION: {ff_state}</div><div style='font-size:12px;color:#64748b;margin-top:4px;'>Price + Volume + OI + OI Change • Same ATM strike • Today's 09:15 baseline / live fallback</div></div>", unsafe_allow_html=True)
     if four_factor.get("ready"):
         ce_sig, pe_sig = four_factor.get("ce"), four_factor.get("pe")
         fc1, fc2, fc3 = st.columns(3)
@@ -2077,7 +2096,7 @@ def main_trading_dashboard():
             _hover_card("ATM PE", f"{pe_sig['state']} ({pe_sig['score']}/4)", _four_factor_explanation("PE", pe_sig), "atm-pe", "metric-hover-card ff-hover")
         st.caption("नोट: यह rule-based confirmation है; इसे अकेले trade signal या guaranteed prediction न मानें।")
     else:
-        st.info("🟢 4-factor engine live है; historical baseline उपलब्ध होने तक current session-open baseline का उपयोग किया जा रहा है।")
+        st.info("🟢 4-factor engine live है; आज के 09:15 baseline से Price + Volume + OI + OI Change calculate किए जा रहे हैं। अगर FYERS history उपलब्ध न हो तो live fallback जारी रहेगा।")
 
     # SUPPORT / RESISTANCE 50-POINT ALERT
     alert_html = ""
